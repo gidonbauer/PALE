@@ -52,3 +52,10 @@ HDF_LIB = -L${HDF_DIR}/lib -lhdf5_hl_cpp -lhdf5_cpp -lhdf5_hl -lhdf5
 CXX_INC += ${HDF_INC}
 CXX_LIB += ${HDF_LIB}
 # = HDF5 =========================================
+
+
+# = GSL ==========================================
+GSL_DIR ?= /opt/homebrew/opt/gsl
+GSL_INC = -I${GSL_DIR}/include
+GSL_LIB = -L${GSL_DIR}/lib -Wl,-rpath,${GSL_DIR}/lib -lgsl -lgslcblas
+# = GSL ==========================================

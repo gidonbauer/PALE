@@ -196,10 +196,20 @@ class Grid {
     return m_y_min + (j + 0.5) * m_dy;
   }
 
+  // - Polar overloads -----------------------------------------------------------------------------
+  [[nodiscard]] constexpr auto theta_min() const noexcept -> Float { return x_min(); }
+  [[nodiscard]] constexpr auto theta_max() const noexcept -> Float { return x_max(); }
+  [[nodiscard]] constexpr auto dtheta() const noexcept -> Float { return dx(); }
+  [[nodiscard]] constexpr auto ntheta() const noexcept -> Index { return nx(); }
+  [[nodiscard]] constexpr auto r_min() const noexcept -> Float { return y_min(); }
+  [[nodiscard]] constexpr auto r_max() const noexcept -> Float { return y_max(); }
+  [[nodiscard]] constexpr auto dr() const noexcept -> Float { return dy(); }
+  [[nodiscard]] constexpr auto nr() const noexcept -> Index { return ny(); }
   [[nodiscard]] constexpr auto theta(Index i) const noexcept -> Float { return x(i); }
   [[nodiscard]] constexpr auto r(Index j) const noexcept -> Float { return y(j); }
   [[nodiscard]] constexpr auto thetam(Index i) const noexcept -> Float { return xm(i); }
   [[nodiscard]] constexpr auto rm(Index j) const noexcept -> Float { return ym(j); }
+  // - Polar overloads -----------------------------------------------------------------------------
 
   [[nodiscard]] constexpr auto alloc_scalar() const noexcept -> Scalar {
     return alloc(m_nx, m_ny, m_nghost);
@@ -224,7 +234,7 @@ class Grid {
   // Iterate the logical rectangle [ilo, ihi) x [jlo, jhi), innermost over the contiguous dimension.
   template <Exec EXEC = Exec::PARALLEL, typename FUNC>
   PALE_FOREACH_DEF constexpr void
-  foreach_range(Index ilo, Index ihi, Index jlo, Index jhi, const FUNC& func) const noexcept {
+  foreach_range(Index ilo, Index ihi, Index jlo, Index jhi, FUNC func) const noexcept {
 #ifdef PALE_PARALLEL
     if constexpr (EXEC == Exec::PARALLEL) {
       const Index n_outer = LAYOUT == Layout::C ? ihi - ilo : jhi - jlo;
@@ -278,36 +288,36 @@ class Grid {
   }
 
   template <Dimension DIM, Exec EXEC = Exec::PARALLEL, typename FUNC>
-  PALE_FOREACH_DEF constexpr void foreach_face_i(const FUNC& func) const noexcept {
+  PALE_FOREACH_DEF constexpr void foreach_face_i(FUNC func) const noexcept {
     const Index ihi = (DIM == Dimension::X) ? nx() + 1 : nx();
     const Index jhi = (DIM == Dimension::X) ? ny() : ny() + 1;
     foreach_range<EXEC>(0, ihi, 0, jhi, func);
   }
 
   template <Dimension DIM, Exec EXEC = Exec::PARALLEL, typename FUNC>
-  PALE_FOREACH_DEF constexpr void foreach_face_a(const FUNC& func) const noexcept {
+  PALE_FOREACH_DEF constexpr void foreach_face_a(FUNC func) const noexcept {
     const Index ihi = (DIM == Dimension::X) ? nx() + nghost() + 1 : nx() + nghost();
     const Index jhi = (DIM == Dimension::X) ? ny() + nghost() : ny() + nghost() + 1;
     foreach_range<EXEC>(-nghost(), ihi, -nghost(), jhi, func);
   }
 
   template <Exec EXEC = Exec::PARALLEL, typename FUNC>
-  PALE_FOREACH_DEF constexpr void foreach_i(const FUNC& func) const noexcept {
+  PALE_FOREACH_DEF constexpr void foreach_i(FUNC func) const noexcept {
     foreach_range<EXEC>(0, nx(), 0, ny(), func);
   }
 
   template <Exec EXEC = Exec::PARALLEL, typename FUNC>
-  PALE_FOREACH_DEF constexpr void foreach_a(const FUNC& func) const noexcept {
+  PALE_FOREACH_DEF constexpr void foreach_a(FUNC func) const noexcept {
     foreach_range<EXEC>(-nghost(), nx() + nghost(), -nghost(), ny() + nghost(), func);
   }
 
   template <Exec EXEC = Exec::PARALLEL, typename FUNC>
-  PALE_FOREACH_DEF constexpr void foreach_vertex_i(const FUNC& func) const noexcept {
+  PALE_FOREACH_DEF constexpr void foreach_vertex_i(FUNC func) const noexcept {
     foreach_range<EXEC>(0, nx() + 1, 0, ny() + 1, func);
   }
 
   template <Exec EXEC = Exec::PARALLEL, typename FUNC>
-  PALE_FOREACH_DEF constexpr void foreach_vertex_a(const FUNC& func) const noexcept {
+  PALE_FOREACH_DEF constexpr void foreach_vertex_a(FUNC func) const noexcept {
     foreach_range<EXEC>(-nghost(), nx() + 1 + nghost(), -nghost(), ny() + 1 + nghost(), func);
   }
 
@@ -315,14 +325,14 @@ class Grid {
   // = transform_reduce ============================================================================
   // ===============================================================================================
   template <Exec EXEC = Exec::PARALLEL, typename ReduceType, typename TRANSFORM, typename REDUCE>
-  [[nodiscard]] PALE_FOREACH_DEF constexpr auto
-  transform_reduce_range(Index ilo,
-                         Index ihi,
-                         Index jlo,
-                         Index jhi,
-                         ReduceType init,
-                         const TRANSFORM& transform,
-                         const REDUCE& reduce) const noexcept -> ReduceType {
+  [[nodiscard]] PALE_FOREACH_DEF constexpr auto transform_reduce_range(Index ilo,
+                                                                       Index ihi,
+                                                                       Index jlo,
+                                                                       Index jhi,
+                                                                       ReduceType init,
+                                                                       TRANSFORM transform,
+                                                                       REDUCE reduce) const noexcept
+      -> ReduceType {
 #ifdef PALE_PARALLEL
     if constexpr (EXEC == Exec::PARALLEL) {
       const Index n_outer = LAYOUT == Layout::C ? ihi - ilo : jhi - jlo;
@@ -391,9 +401,8 @@ class Grid {
             typename TRANSFORM,
             typename REDUCE>
   [[nodiscard]] PALE_FOREACH_DEF constexpr auto
-  transform_reduce_face_i(ReduceType init,
-                          const TRANSFORM& transform,
-                          const REDUCE& reduce) const noexcept -> ReduceType {
+  transform_reduce_face_i(ReduceType init, TRANSFORM transform, REDUCE reduce) const noexcept
+      -> ReduceType {
     const Index ihi = (DIM == Dimension::X) ? nx() + 1 : nx();
     const Index jhi = (DIM == Dimension::X) ? ny() : ny() + 1;
     return transform_reduce_range<EXEC>(0, ihi, 0, jhi, init, transform, reduce);
@@ -405,9 +414,8 @@ class Grid {
             typename TRANSFORM,
             typename REDUCE>
   [[nodiscard]] PALE_FOREACH_DEF constexpr auto
-  transform_reduce_face_a(ReduceType init,
-                          const TRANSFORM& transform,
-                          const REDUCE& reduce) const noexcept -> ReduceType {
+  transform_reduce_face_a(ReduceType init, TRANSFORM transform, REDUCE reduce) const noexcept
+      -> ReduceType {
     const Index ihi = (DIM == Dimension::X) ? nx() + nghost() + 1 : nx() + nghost();
     const Index jhi = (DIM == Dimension::X) ? ny() + nghost() : ny() + nghost() + 1;
     return transform_reduce_range<EXEC>(-nghost(), ihi, -nghost(), jhi, init, transform, reduce);
@@ -415,34 +423,30 @@ class Grid {
 
   template <Exec EXEC = Exec::PARALLEL, typename ReduceType, typename TRANSFORM, typename REDUCE>
   [[nodiscard]] PALE_FOREACH_DEF constexpr auto
-  transform_reduce_i(ReduceType init,
-                     const TRANSFORM& transform,
-                     const REDUCE& reduce) const noexcept -> ReduceType {
+  transform_reduce_i(ReduceType init, TRANSFORM transform, REDUCE reduce) const noexcept
+      -> ReduceType {
     return transform_reduce_range<EXEC>(0, nx(), 0, ny(), init, transform, reduce);
   }
 
   template <Exec EXEC = Exec::PARALLEL, typename ReduceType, typename TRANSFORM, typename REDUCE>
   [[nodiscard]] PALE_FOREACH_DEF constexpr auto
-  transform_reduce_a(ReduceType init,
-                     const TRANSFORM& transform,
-                     const REDUCE& reduce) const noexcept -> ReduceType {
+  transform_reduce_a(ReduceType init, TRANSFORM transform, REDUCE reduce) const noexcept
+      -> ReduceType {
     return transform_reduce_range<EXEC>(
         -nghost(), nx() + nghost(), -nghost(), ny() + nghost(), init, transform, reduce);
   }
 
   template <Exec EXEC = Exec::PARALLEL, typename ReduceType, typename TRANSFORM, typename REDUCE>
   [[nodiscard]] PALE_FOREACH_DEF constexpr auto
-  transform_reduce_vertex_i(ReduceType init,
-                            const TRANSFORM& transform,
-                            const REDUCE& reduce) const noexcept -> ReduceType {
+  transform_reduce_vertex_i(ReduceType init, TRANSFORM transform, REDUCE reduce) const noexcept
+      -> ReduceType {
     return transform_reduce_range<EXEC>(0, nx() + 1, 0, ny() + 1, init, transform, reduce);
   }
 
   template <Exec EXEC = Exec::PARALLEL, typename ReduceType, typename TRANSFORM, typename REDUCE>
   [[nodiscard]] PALE_FOREACH_DEF constexpr auto
-  transform_reduce_vertex_a(ReduceType init,
-                            const TRANSFORM& transform,
-                            const REDUCE& reduce) const noexcept -> ReduceType {
+  transform_reduce_vertex_a(ReduceType init, TRANSFORM transform, REDUCE reduce) const noexcept
+      -> ReduceType {
     return transform_reduce_range<EXEC>(
         -nghost(), nx() + 1 + nghost(), -nghost(), ny() + 1 + nghost(), init, transform, reduce);
   }
