@@ -18,6 +18,7 @@
 
 #include "Mac.hpp"
 #include "MultigridPoisson.hpp"
+#include "Parallel.hpp"
 
 using Float             = double;
 constexpr Layout LAYOUT = Layout::C;
@@ -608,20 +609,23 @@ void run(Index N, Float abstol, Index reps, Index spinup, std::FILE* file) {
 
 // =================================================================================================
 auto main(int argc, char** argv) -> int {
-  Index N      = 512;
-  Float abstol = 1e-4;
-  Index reps   = 20;
-  Index spinup = 10;
+  Index N           = 512;
+  Float abstol      = 1e-4;
+  Index reps        = 20;
+  Index spinup      = 10;
+  Index max_threads = 0;
   std::string filename;
 
   const auto* prog     = pop_arg(argc, argv);
   const auto usage_str = Igor::detail::format(
-      "Usage: {} [-N=<N>] [--abstol=<abstol>] [--reps=<reps>] [--spinup=<spinup>] [-o=<output>]\n"
+      "Usage: {} [-N=<N>] [--abstol=<abstol>] [--reps=<reps>] [--spinup=<spinup>] [-j=<max. "
+      "threads>] [-o=<output>]\n"
       "  -N        Grid size per direction                         (default: {})\n"
       "  --abstol  Absolute tolerance; the solver is asked for     (default: {:g})\n"
       "            `abstol / dt^2`, as the drivers do\n"
       "  --reps    Timed repetitions per problem                   (default: {})\n"
       "  --spinup  Timesteps to run before capturing the problems  (default: {})\n"
+      "  -j        Maximum number of threads to be used            (default: all available)\n"
       "  -o        Write the report to this file                   (default: stdout)\n"
       "  -h        Show this message\n"
       "\n"
@@ -670,6 +674,8 @@ auto main(int argc, char** argv) -> int {
       ok = parse_index(value, reps);
     } else if (name == "spinup") {
       ok = parse_index(value, spinup);
+    } else if (name == "j") {
+      ok = parse_index(value, max_threads);
     } else if (name == "o" || name == "output") {
       ok = !value.empty();
       if (ok) { filename = value; }
@@ -684,6 +690,10 @@ auto main(int argc, char** argv) -> int {
       Igor::Error("  Invalid value `{}` for flag `{}`", value, name);
       return 1;
     }
+  }
+
+  if (max_threads > 0 && !set_max_threads(static_cast<size_t>(max_threads))) {
+    Igor::Warn("Could not set max. number of threads.");
   }
 
   std::FILE* out = stdout;
@@ -703,7 +713,7 @@ auto main(int argc, char** argv) -> int {
   std::fprintf(out, "spinup   = %d\n", spinup);
   std::fprintf(out,
                "parallel = %s\n",
-#ifdef NS_FVM_PARALLEL
+#ifdef PALE_PARALLEL
                "yes"
 #else
                "no"

@@ -8,11 +8,21 @@
 #include "BoundaryConditions.hpp"
 #include "Common.hpp"
 #include "Grid.hpp"
-#include "HDFWriter.hpp"
 #include "IO.hpp"
 #include "Mac.hpp"
 #include "Monitor.hpp"
 #include "MultigridPoisson.hpp"
+#include "Parallel.hpp"
+
+#ifndef PALE_BENCH_VTK_OUTPUT
+#include "HDFWriter.hpp"
+template <typename Float, Layout LAYOUT>
+using DataWriter = HDFWriter<Float, LAYOUT>;
+#else
+#include "VTKWriter.hpp"
+template <typename Float, Layout LAYOUT>
+using DataWriter = VTKWriter<Float, LAYOUT>;
+#endif  // PALE_BENCH_VTK_OUTPUT
 
 using Float              = double;
 
@@ -48,7 +58,7 @@ constexpr Float dt_write = tend / 10.0;
 
 [[nodiscard]] constexpr auto strip_dashes(std::string_view arg) noexcept -> std::string_view {
   if (arg.starts_with("--")) { return arg.substr(2); }
-  if (arg.starts_with("-")) { return arg.substr(1); }
+  if (arg.starts_with('-')) { return arg.substr(1); }
   return {};
 }
 
@@ -58,9 +68,11 @@ auto main(int argc, char** argv) -> int {
   Index min_size       = 2;
   Index num_pre        = 0;
   Index num_post       = 4;
+  Index max_threads    = 0;
   const auto* prog     = pop_arg(argc, argv);
   const auto usage_str = Igor::detail::format(
-      "Usage: {} [--min=<min>] [--pre=<pre>] [--post=<post>] <grid size>", prog);
+      "Usage: {} [--min=<min>] [--pre=<pre>] [--post=<post>] [-j=<max. threads>] <grid size>",
+      prog);
 
   while (argc > 0) {
     const std::string_view arg = pop_arg(argc, argv);
@@ -108,6 +120,8 @@ auto main(int argc, char** argv) -> int {
       ok = parse_index(value, num_post);
     } else if (name == "min") {
       ok = parse_index(value, min_size);
+    } else if (name == "j") {
+      ok = parse_index(value, max_threads);
     } else {
       Igor::Error("{}", usage_str);
       Igor::Error("  Unknown flag `{}`", arg);
@@ -125,6 +139,10 @@ auto main(int argc, char** argv) -> int {
     Igor::Error("{}", usage_str);
     Igor::Error("  Did not provide grid size.");
     return 1;
+  }
+
+  if (max_threads > 0 && !set_max_threads(static_cast<size_t>(max_threads))) {
+    Igor::Warn("Could not set max. number of threads.");
   }
 
   Igor::Info("Re    = {}", Re);
@@ -164,10 +182,10 @@ auto main(int argc, char** argv) -> int {
       .top    = Dirichlet<Float>{.val = 0.0},
   };
   const BConds<Float> dp_bconds{
-      .left   = Neumann{},
-      .right  = Neumann{},
-      .bottom = Neumann{},
-      .top    = Neumann{},
+      .left   = Neumann(),
+      .right  = Neumann(),
+      .bottom = Neumann(),
+      .top    = Neumann(),
   };
 
   // = Linear solver ===============================================================================
@@ -182,7 +200,7 @@ auto main(int argc, char** argv) -> int {
   apply_velocity_bconds(grid, u_bconds, v_bconds, u, t);
   interpolate(grid, u, ui);
 
-  HDFWriter writer(output_dir, grid);
+  DataWriter writer(output_dir, grid);
   writer.add_field("u", ui);
   writer.add_field("p", p);
   writer.add_field("div", div);

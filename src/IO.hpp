@@ -21,12 +21,12 @@ template <typename Float>
 }
 
 // -------------------------------------------------------------------------------------------------
-#ifndef NS_FVM_BASE_DIR
-#define NS_FVM_BASE_DIR "."
+#ifndef PALE_BASE_DIR
+#define PALE_BASE_DIR "."
 #endif  // FS_BASE_DIR
 [[nodiscard]] auto
 get_output_directory(std::string_view subdir   = "output",
-                     std::string_view base_dir = NS_FVM_BASE_DIR,
+                     std::string_view base_dir = PALE_BASE_DIR,
                      std::source_location loc  = std::source_location::current()) noexcept
     -> std::string {
   // ===============

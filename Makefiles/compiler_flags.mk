@@ -74,5 +74,5 @@ ifeq (${SCOREP}, 1)
 endif
 
 ifeq (${PARALLEL}, 1)
-  CXX_FLAGS += -DNS_FVM_PARALLEL
+  CXX_FLAGS += -DPALE_PARALLEL
 endif

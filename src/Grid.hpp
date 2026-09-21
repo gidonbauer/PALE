@@ -5,34 +5,34 @@
 #include <memory>
 #include <type_traits>
 
-#ifdef NS_FVM_PARALLEL
+#ifdef PALE_PARALLEL
 #include <algorithm>
 #include <execution>
 #include <numeric>
 
 #include "IotaIter.hpp"
-#endif  // NS_FVM_PARALLEL
+#endif  // PALE_PARALLEL
 
 #include <Igor/Logging.hpp>
 
 #if defined(__clang__) || defined(__GNUC__)
-#define NS_FVM_FOREACH_DEF __attribute__((flatten)) __attribute__((always_inline))
+#define PALE_FOREACH_DEF __attribute__((flatten)) __attribute__((always_inline))
 #else
-#define NS_FVM_FOREACH_DEF
-#warning "NS_FVM_FOREACH_DEF is not defined for this compiler; foreach kernels may not vectorize."
+#define PALE_FOREACH_DEF
+#warning "PALE_FOREACH_DEF is not defined for this compiler; foreach kernels may not vectorize."
 #endif
 
 #define FOREACH_FUNC [=](Index i, Index j)
 
-#ifndef NS_FVM_INDEX_TYPE
+#ifndef PALE_INDEX_TYPE
 using Index = int32_t;
 #else
-static_assert(std::is_integral_v<NS_FVM_INDEX_TYPE> && std::is_signed_v<NS_FVM_INDEX_TYPE>,
-              "NS_FVM_INDEX_TYPE must be a signed integer type.");
-using Index = NS_FVM_INDEX_TYPE;
+static_assert(std::is_integral_v<PALE_INDEX_TYPE> && std::is_signed_v<PALE_INDEX_TYPE>,
+              "PALE_INDEX_TYPE must be a signed integer type.");
+using Index = PALE_INDEX_TYPE;
 #endif  // FS_INDEX_TYPE
 
-#ifdef NS_FVM_PARALLEL
+#ifdef PALE_PARALLEL
 namespace Parallel {
 #ifdef __NVCOMPILER
 // GPU parallelization
@@ -223,9 +223,9 @@ class Grid {
   // ===============================================================================================
   // Iterate the logical rectangle [ilo, ihi) x [jlo, jhi), innermost over the contiguous dimension.
   template <Exec EXEC = Exec::PARALLEL, typename FUNC>
-  NS_FVM_FOREACH_DEF constexpr void
+  PALE_FOREACH_DEF constexpr void
   foreach_range(Index ilo, Index ihi, Index jlo, Index jhi, const FUNC& func) const noexcept {
-#ifdef NS_FVM_PARALLEL
+#ifdef PALE_PARALLEL
     if constexpr (EXEC == Exec::PARALLEL) {
       const Index n_outer = LAYOUT == Layout::C ? ihi - ilo : jhi - jlo;
       const Index n_inner = LAYOUT == Layout::C ? jhi - jlo : ihi - ilo;
@@ -259,7 +259,7 @@ class Grid {
                       }
                     });
     } else
-#endif  // NS_FVM_PARALLEL
+#endif  // PALE_PARALLEL
       if constexpr (LAYOUT == Layout::F) {
         // Column-major: i is contiguous.
         for (Index j = jlo; j < jhi; ++j) {
@@ -278,36 +278,36 @@ class Grid {
   }
 
   template <Dimension DIM, Exec EXEC = Exec::PARALLEL, typename FUNC>
-  NS_FVM_FOREACH_DEF constexpr void foreach_face_i(const FUNC& func) const noexcept {
+  PALE_FOREACH_DEF constexpr void foreach_face_i(const FUNC& func) const noexcept {
     const Index ihi = (DIM == Dimension::X) ? nx() + 1 : nx();
     const Index jhi = (DIM == Dimension::X) ? ny() : ny() + 1;
     foreach_range<EXEC>(0, ihi, 0, jhi, func);
   }
 
   template <Dimension DIM, Exec EXEC = Exec::PARALLEL, typename FUNC>
-  NS_FVM_FOREACH_DEF constexpr void foreach_face_a(const FUNC& func) const noexcept {
+  PALE_FOREACH_DEF constexpr void foreach_face_a(const FUNC& func) const noexcept {
     const Index ihi = (DIM == Dimension::X) ? nx() + nghost() + 1 : nx() + nghost();
     const Index jhi = (DIM == Dimension::X) ? ny() + nghost() : ny() + nghost() + 1;
     foreach_range<EXEC>(-nghost(), ihi, -nghost(), jhi, func);
   }
 
   template <Exec EXEC = Exec::PARALLEL, typename FUNC>
-  NS_FVM_FOREACH_DEF constexpr void foreach_i(const FUNC& func) const noexcept {
+  PALE_FOREACH_DEF constexpr void foreach_i(const FUNC& func) const noexcept {
     foreach_range<EXEC>(0, nx(), 0, ny(), func);
   }
 
   template <Exec EXEC = Exec::PARALLEL, typename FUNC>
-  NS_FVM_FOREACH_DEF constexpr void foreach_a(const FUNC& func) const noexcept {
+  PALE_FOREACH_DEF constexpr void foreach_a(const FUNC& func) const noexcept {
     foreach_range<EXEC>(-nghost(), nx() + nghost(), -nghost(), ny() + nghost(), func);
   }
 
   template <Exec EXEC = Exec::PARALLEL, typename FUNC>
-  NS_FVM_FOREACH_DEF constexpr void foreach_vertex_i(const FUNC& func) const noexcept {
+  PALE_FOREACH_DEF constexpr void foreach_vertex_i(const FUNC& func) const noexcept {
     foreach_range<EXEC>(0, nx() + 1, 0, ny() + 1, func);
   }
 
   template <Exec EXEC = Exec::PARALLEL, typename FUNC>
-  NS_FVM_FOREACH_DEF constexpr void foreach_vertex_a(const FUNC& func) const noexcept {
+  PALE_FOREACH_DEF constexpr void foreach_vertex_a(const FUNC& func) const noexcept {
     foreach_range<EXEC>(-nghost(), nx() + 1 + nghost(), -nghost(), ny() + 1 + nghost(), func);
   }
 
@@ -315,7 +315,7 @@ class Grid {
   // = transform_reduce ============================================================================
   // ===============================================================================================
   template <Exec EXEC = Exec::PARALLEL, typename ReduceType, typename TRANSFORM, typename REDUCE>
-  [[nodiscard]] NS_FVM_FOREACH_DEF constexpr auto
+  [[nodiscard]] PALE_FOREACH_DEF constexpr auto
   transform_reduce_range(Index ilo,
                          Index ihi,
                          Index jlo,
@@ -323,7 +323,7 @@ class Grid {
                          ReduceType init,
                          const TRANSFORM& transform,
                          const REDUCE& reduce) const noexcept -> ReduceType {
-#ifdef NS_FVM_PARALLEL
+#ifdef PALE_PARALLEL
     if constexpr (EXEC == Exec::PARALLEL) {
       const Index n_outer = LAYOUT == Layout::C ? ihi - ilo : jhi - jlo;
       const Index n_inner = LAYOUT == Layout::C ? jhi - jlo : ihi - ilo;
@@ -363,7 +363,7 @@ class Grid {
                                      }
                                    });
     } else
-#endif  // NS_FVM_PARALLEL
+#endif  // PALE_PARALLEL
     {
       ReduceType res = init;
       if constexpr (LAYOUT == Layout::F) {
@@ -390,7 +390,7 @@ class Grid {
             typename ReduceType,
             typename TRANSFORM,
             typename REDUCE>
-  [[nodiscard]] NS_FVM_FOREACH_DEF constexpr auto
+  [[nodiscard]] PALE_FOREACH_DEF constexpr auto
   transform_reduce_face_i(ReduceType init,
                           const TRANSFORM& transform,
                           const REDUCE& reduce) const noexcept -> ReduceType {
@@ -404,7 +404,7 @@ class Grid {
             typename ReduceType,
             typename TRANSFORM,
             typename REDUCE>
-  [[nodiscard]] NS_FVM_FOREACH_DEF constexpr auto
+  [[nodiscard]] PALE_FOREACH_DEF constexpr auto
   transform_reduce_face_a(ReduceType init,
                           const TRANSFORM& transform,
                           const REDUCE& reduce) const noexcept -> ReduceType {
@@ -414,7 +414,7 @@ class Grid {
   }
 
   template <Exec EXEC = Exec::PARALLEL, typename ReduceType, typename TRANSFORM, typename REDUCE>
-  [[nodiscard]] NS_FVM_FOREACH_DEF constexpr auto
+  [[nodiscard]] PALE_FOREACH_DEF constexpr auto
   transform_reduce_i(ReduceType init,
                      const TRANSFORM& transform,
                      const REDUCE& reduce) const noexcept -> ReduceType {
@@ -422,7 +422,7 @@ class Grid {
   }
 
   template <Exec EXEC = Exec::PARALLEL, typename ReduceType, typename TRANSFORM, typename REDUCE>
-  [[nodiscard]] NS_FVM_FOREACH_DEF constexpr auto
+  [[nodiscard]] PALE_FOREACH_DEF constexpr auto
   transform_reduce_a(ReduceType init,
                      const TRANSFORM& transform,
                      const REDUCE& reduce) const noexcept -> ReduceType {
@@ -431,7 +431,7 @@ class Grid {
   }
 
   template <Exec EXEC = Exec::PARALLEL, typename ReduceType, typename TRANSFORM, typename REDUCE>
-  [[nodiscard]] NS_FVM_FOREACH_DEF constexpr auto
+  [[nodiscard]] PALE_FOREACH_DEF constexpr auto
   transform_reduce_vertex_i(ReduceType init,
                             const TRANSFORM& transform,
                             const REDUCE& reduce) const noexcept -> ReduceType {
@@ -439,7 +439,7 @@ class Grid {
   }
 
   template <Exec EXEC = Exec::PARALLEL, typename ReduceType, typename TRANSFORM, typename REDUCE>
-  [[nodiscard]] NS_FVM_FOREACH_DEF constexpr auto
+  [[nodiscard]] PALE_FOREACH_DEF constexpr auto
   transform_reduce_vertex_a(ReduceType init,
                             const TRANSFORM& transform,
                             const REDUCE& reduce) const noexcept -> ReduceType {

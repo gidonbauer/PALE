@@ -6,11 +6,21 @@
 #include "BoundaryConditions.hpp"
 #include "Common.hpp"
 #include "Grid.hpp"
-#include "HDFWriter.hpp"
 #include "IO.hpp"
 #include "Mac.hpp"
 #include "Monitor.hpp"
 #include "MultigridPoisson.hpp"
+#include "Parallel.hpp"
+
+#ifndef PALE_BENCH_VTK_OUTPUT
+#include "HDFWriter.hpp"
+template <typename Float, Layout LAYOUT>
+using DataWriter = HDFWriter<Float, LAYOUT>;
+#else
+#include "VTKWriter.hpp"
+template <typename Float, Layout LAYOUT>
+using DataWriter = VTKWriter<Float, LAYOUT>;
+#endif  // PALE_BENCH_VTK_OUTPUT
 
 // = Setup =========================================================================================
 using Float               = double;
@@ -27,7 +37,7 @@ constexpr Float mu        = 1e-3;
 constexpr Float Re        = Uinf * rho * r_min / mu;
 
 constexpr Float CFL       = 0.7;
-constexpr Float tend      = 25.0;
+constexpr Float tend      = 1.0;  // 25.0;
 constexpr Float dt_write  = tend / 10.0;
 // = Setup =========================================================================================
 
@@ -89,7 +99,7 @@ constexpr void custom_velocity_top_boundary(const Grid<Float, LAYOUT>& grid,
 
 [[nodiscard]] constexpr auto strip_dashes(std::string_view arg) noexcept -> std::string_view {
   if (arg.starts_with("--")) { return arg.substr(2); }
-  if (arg.starts_with("-")) { return arg.substr(1); }
+  if (arg.starts_with('-')) { return arg.substr(1); }
   return {};
 }
 
@@ -99,9 +109,11 @@ auto main(int argc, char** argv) -> int {
   Index min_size       = 2;
   Index num_pre        = 0;
   Index num_post       = 4;
+  Index num_threads    = 0;
   const auto* prog     = pop_arg(argc, argv);
   const auto usage_str = Igor::detail::format(
-      "Usage: {} [--min=<min>] [--pre=<pre>] [--post=<post>] <grid size>", prog);
+      "Usage: {} [--min=<min>] [--pre=<pre>] [--post=<post>] [-j=<num. threads>] <grid size>",
+      prog);
 
   while (argc > 0) {
     const std::string_view arg = pop_arg(argc, argv);
@@ -149,6 +161,8 @@ auto main(int argc, char** argv) -> int {
       ok = parse_index(value, num_post);
     } else if (name == "min") {
       ok = parse_index(value, min_size);
+    } else if (name == "j") {
+      ok = parse_index(value, num_threads);
     } else {
       Igor::Error("{}", usage_str);
       Igor::Error("  Unknown flag `{}`", arg);
@@ -166,6 +180,10 @@ auto main(int argc, char** argv) -> int {
     Igor::Error("{}", usage_str);
     Igor::Error("  Did not provide grid size.");
     return 1;
+  }
+
+  if (num_threads > 0 && !set_max_threads(static_cast<size_t>(num_threads))) {
+    Igor::Warn("Could not set the max. number of threads.");
   }
 
   Igor::Info("Re   = {}", Re);
@@ -211,8 +229,8 @@ auto main(int argc, char** argv) -> int {
   const BConds<Float> dp_bconds{
       .left   = Periodic{},
       .right  = Periodic{},
-      .bottom = Neumann{},
-      .top    = Neumann{},
+      .bottom = Neumann(),
+      .top    = Neumann(),
   };
 
   MultigridSolver solver(grid, dp_bconds, min_size, num_pre, num_post);
@@ -233,7 +251,7 @@ auto main(int argc, char** argv) -> int {
   custom_velocity_top_boundary(grid, u);
   interpolate(grid, u, ui);
 
-  HDFWriter writer(output_dir, grid);
+  DataWriter writer(output_dir, grid);
   writer.add_field("u", ui);
   writer.add_field("p", p);
   writer.add_field("div", div);
