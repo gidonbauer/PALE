@@ -19,5 +19,5 @@ bin/test/Channel-FFT: test/Channel.cpp ${HEADERS} | bin/test test/output
 bin/test/Channel-MG: test/Channel.cpp ${HEADERS} | bin/test test/output
 	${CXX} ${CXX_FLAGS} ${CXX_INC} -DMG_POISSON=1 -o $@ $< ${CXX_LIB}
 
-test/output bin/test:
+test/output bin/test: %:
 	mkdir -p $@

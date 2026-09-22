@@ -1,6 +1,8 @@
 .cache
 .vscode
 .idea
+.claude
+.mypy_cache
 .DS_Store
 
 compile_commands.json
