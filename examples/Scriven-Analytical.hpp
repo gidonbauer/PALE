@@ -111,6 +111,10 @@ constexpr auto R(double t, const Params& p) -> double {
   return 2.0 * p.beta * std::sqrt(p.alpha * t);
 }
 
+constexpr auto R_dot(double t, const Params& p) -> double {
+  return p.beta * std::sqrt(p.alpha / t);
+}
+
 constexpr auto t(double R, const Params& p) -> double { return sq(R / (2.0 * p.beta)) / p.alpha; }
 
 constexpr auto T(double r, double t, Params& p) -> double {
