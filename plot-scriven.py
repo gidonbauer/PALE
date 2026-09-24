@@ -21,20 +21,7 @@ def R_dot(t, s):
   return s['beta']*np.sqrt(s['alpha']/t)
 
 
-def main():
-    parser = ArgumentParser()
-    parser.add_argument("monitor_file", type=str, help="Monitor file of the simulation.")
-    parser.add_argument("setup_file", type=str, help="Setup file of the simulation in JSON format.")
-    args = parser.parse_args()
-
-    df = read_monitor_file(args.monitor_file)
-    try:
-        with open(args.setup_file, "r") as f:
-            s = json.load(f)
-    except IOError as err:
-        print(err, file=sys.stderr)
-        sys.exit(1)
-
+def plot_results(df, s):
     R_L1 = simpson(np.abs(df['r'] - R(df['t'], s)), df['t'])
     R_dot_L1 = simpson(np.abs(df['r_dot'] - R_dot(df['t'], s)), df['t'])
 
@@ -83,6 +70,57 @@ def main():
     # - Effective beta -------------------------------------
 
     plt.show()
+
+
+def plot_errors(df):
+    fig, ax = plt.subplots(nrows=2, ncols=2, figsize=(10, 5), layout="tight")
+
+    # - Radius ---------------------------------------------
+    ax[0, 0].plot(df['t'], df['abserr(r)']*1e6, label="Simulation")
+    ax[0, 0].set_xlabel('Time [s]')
+    ax[0, 0].set_ylabel('Absolute error radius [µm]')
+    # - Radius ---------------------------------------------
+
+    # - Change of radius -----------------------------------
+    ax[1, 0].plot(df['t'], df['abserr(r_dot)']*1e6, label="Simulation")
+    ax[1, 0].set_xlabel('Time [s]')
+    ax[1, 0].set_ylabel('Absolute error change of radius [µm/s]')
+    # - Change of radius -----------------------------------
+
+    # - Effective beta -------------------------------------
+    ax[0, 1].plot(df['t'], df['abserr(beta)'], label="Simulation")
+    ax[0, 1].set_xlabel('Time [s]')
+    ax[0, 1].set_ylabel(R'Absolute error effective $\beta$ [-]')
+    # - Effective beta -------------------------------------
+
+    # - All relative errors --------------------------------
+    ax[1, 1].plot(df['t'], df['relerr(r)'], label="$R$")
+    ax[1, 1].plot(df['t'], df['relerr(r_dot)'], label=R"$\dot{R}$")
+    ax[1, 1].plot(df['t'], df['relerr(beta)'], label=R"$\beta$")
+    ax[1, 1].set_xlabel('Time [s]')
+    ax[1, 1].set_ylabel('Relative error [-]')
+    ax[1, 1].legend()
+    # - All relative errors --------------------------------
+
+    plt.show()
+
+
+def main():
+    parser = ArgumentParser()
+    parser.add_argument("monitor_file", type=str, help="Monitor file of the simulation.")
+    parser.add_argument("setup_file", type=str, help="Setup file of the simulation in JSON format.")
+    args = parser.parse_args()
+
+    df = read_monitor_file(args.monitor_file)
+    try:
+        with open(args.setup_file, "r") as f:
+            s = json.load(f)
+    except IOError as err:
+        print(err, file=sys.stderr)
+        sys.exit(1)
+
+    plot_results(df, s)
+    plot_errors(df)
 
 
 if __name__ == "__main__":

@@ -124,10 +124,11 @@ auto main(int argc, char** argv) -> int {
     return 1;
   }
 
-  const auto output_dir = get_output_directory();
+  // const auto output_dir = get_output_directory();
+  const std::string output_dir = "./output/scriven-2d-new";
   if (!init_output_directory(output_dir)) { return 1; }
 
-  Grid<Float> grid(theta_min, theta_max, N, r_min, r_max, N, 3, Coordinates::POLAR);
+  Grid<Float> grid(theta_min, theta_max, N / 2, r_min, r_max, N, 3, Coordinates::POLAR);
   auto u_old = grid.alloc_face_vector();
   auto u     = grid.alloc_face_vector();
   auto ui    = grid.alloc_vector();
@@ -209,8 +210,8 @@ auto main(int argc, char** argv) -> int {
   Vec2<Float> w{};
 
   const BConds<Float> uth_bconds{
-      .left   = Neumann(),
-      .right  = Neumann(),
+      .left   = Dirichlet<Float>{.val = 0.0},
+      .right  = Dirichlet<Float>{.val = 0.0},
       .bottom = Dirichlet<Float>{.val = 0.0},
       .top    = Neumann{.clipped = false},
   };
@@ -250,17 +251,24 @@ auto main(int argc, char** argv) -> int {
   writer.add_field("div", div);
   if (!writer.write(t)) { return 1; }
 
-  Stats p_stats     = stats(grid, p);
-  Stats u_stats     = stats(grid, u.x);
-  Stats v_stats     = stats(grid, u.y);
-  Stats T_stats     = stats(grid, T);
-  Stats div_stats   = stats(grid, div);
-  Float div_max     = std::max(std::abs(div_stats.min), std::abs(div_stats.max));
+  Stats p_stats      = stats(grid, p);
+  Stats u_stats      = stats(grid, u.x);
+  Stats v_stats      = stats(grid, u.y);
+  Stats T_stats      = stats(grid, T);
+  Stats div_stats    = stats(grid, div);
+  Float div_max      = std::max(std::abs(div_stats.min), std::abs(div_stats.max));
 
-  Float m_dot_total = calc_m_dot_total(grid, T);
-  Float r           = grid.y_min();
-  Float r_dot       = calc_r_dot(r, m_dot_total);
-  Float beta_eff    = Scriven::beta_eff(r, r_dot, params);
+  Float m_dot_total  = calc_m_dot_total(grid, T);
+  Float r            = grid.y_min();
+  Float r_dot        = calc_r_dot(r, m_dot_total);
+  Float beta_eff     = Scriven::beta_eff(r, r_dot, params);
+
+  Float r_abserr     = std::abs(r - Scriven::R(t, params));
+  Float r_dot_abserr = std::abs(r_dot - Scriven::R_dot(t, params));
+  Float beta_abserr  = std::abs(beta_eff - params.beta);
+  Float r_relerr     = r_abserr / Scriven::R(t, params);
+  Float r_dot_relerr = r_dot_abserr / Scriven::R_dot(t, params);
+  Float beta_relerr  = beta_abserr / params.beta;
 
   // Float mg_res      = 0.0;
   // Index mg_cycles   = 0;
@@ -270,13 +278,19 @@ auto main(int argc, char** argv) -> int {
   monitor.add_variable(&dt, "dt");
   // monitor.add_variable(&p_stats.max, "max(p)");
   // monitor.add_variable(&u_stats.max, "max(u_theta)");
-  // monitor.add_variable(&v_stats.max, "max(u_r)");
+  monitor.add_variable(&v_stats.max, "max(u_r)");
   monitor.add_variable(&T_stats.min, "min(T)");
   monitor.add_variable(&T_stats.max, "max(T)");
   monitor.add_variable(&m_dot_total, "m_dot_total");
   monitor.add_variable(&r_dot, "r_dot");
   monitor.add_variable(&r, "r");
   monitor.add_variable(&beta_eff, "beta_eff");
+  monitor.add_variable(&r_abserr, "abserr(r)");
+  monitor.add_variable(&r_dot_abserr, "abserr(r_dot)");
+  monitor.add_variable(&beta_abserr, "abserr(beta)");
+  monitor.add_variable(&r_relerr, "relerr(r)");
+  monitor.add_variable(&r_dot_relerr, "relerr(r_dot)");
+  monitor.add_variable(&beta_relerr, "relerr(beta)");
   monitor.add_variable(&div_max, "absmax(div)");
   // monitor.add_variable(&mg_res, "res(MG)");
   // monitor.add_variable(&mg_cycles, "cycles(MG)");
@@ -297,13 +311,14 @@ auto main(int argc, char** argv) -> int {
     copy(T, T_old);
 
     // mg_cycles = 0;
-    // 1) Mass exchange -> grid velocity
-    m_dot_total      = calc_m_dot_total(grid, T);
-    r_dot            = calc_r_dot(grid.y_min(), m_dot_total);
-    w.r()            = r_dot;
-    ur_bconds.bottom = Dirichlet<Float>{.val = eps * w.r()};
     for (Index sub_iter = 0; sub_iter < 2; ++sub_iter) {
       const auto local_dt = sub_iter == 0 ? 0.5 * dt : dt;
+
+      // 1) Mass exchange -> grid velocity
+      m_dot_total      = calc_m_dot_total(grid, T);
+      r_dot            = calc_r_dot(grid.y_min(), m_dot_total);
+      w.r()            = r_dot;
+      ur_bconds.bottom = Dirichlet<Float>{.val = eps * w.r()};
 
       // 2) Prediction
       ALEPolar::calc_mom_flux(grid, u, p, rhol, mul, w, FUX, FUY, FVX, FVY);
@@ -318,7 +333,7 @@ auto main(int argc, char** argv) -> int {
       // 4) Pressure calculation
       ALEPolar::calc_div(grid, u, div);
       grid.foreach_i(FOREACH_FUNC { div(i, j) *= rhol / local_dt; });
-      if (!solver.solve(dp, div, 1e-6 / local_dt)) {
+      if (!solver.solve(dp, div, 1e-3 / local_dt)) {
         Igor::Warn("t={:.8f}: Multigrid solver did not converge after {} cycles: res = {:.8e}",
                    t,
                    solver.num_cycles(),
@@ -340,16 +355,25 @@ auto main(int argc, char** argv) -> int {
     ALEPolar::calc_div(grid, u, div);
     interpolate(grid, u, ui);
 
-    p_stats    = stats(grid, p);
-    u_stats    = stats(grid, u.x);
-    v_stats    = stats(grid, u.y);
-    div_stats  = stats(grid, div);
-    T_stats    = stats(grid, T);
-    div_max    = std::max(std::abs(div_stats.min), std::abs(div_stats.max));
-    r          = grid.y_min();
-    beta_eff   = Scriven::beta_eff(r, r_dot, params);
+    p_stats       = stats(grid, p);
+    u_stats       = stats(grid, u.x);
+    v_stats       = stats(grid, u.y);
+    div_stats     = stats(grid, div);
+    T_stats       = stats(grid, T);
+    div_max       = std::max(std::abs(div_stats.min), std::abs(div_stats.max));
 
-    t         += dt;
+    beta_eff      = Scriven::beta_eff(r, r_dot, params);
+    r             = grid.y_min();
+    m_dot_total   = calc_m_dot_total(grid, T);
+    r_dot         = calc_r_dot(grid.y_min(), m_dot_total);
+    r_abserr      = std::abs(r - Scriven::R(t, params));
+    r_dot_abserr  = std::abs(r_dot - Scriven::R_dot(t, params));
+    beta_abserr   = std::abs(beta_eff - params.beta);
+    r_relerr      = r_abserr / Scriven::R(t, params);
+    r_dot_relerr  = r_dot_abserr / Scriven::R_dot(t, params);
+    beta_relerr   = beta_abserr / params.beta;
+
+    t            += dt;
     monitor.write();
     if (should_save(t, dt, dt_write, tend)) {
       writer.update_grid(grid);
