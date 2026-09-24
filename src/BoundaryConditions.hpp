@@ -292,8 +292,14 @@ struct Neumann {
   static constexpr void apply_left_align(const Grid<Float, LAYOUT>& grid,
                                          Scalar<Float, LAYOUT> s,
                                          bool clipped = false) noexcept {
-    // TODO: This is incorrect: u(0,j) is never adjusted and we need u(-k,j) = u(k,j)
-    return apply_left_offset(grid, s, clipped);  // The same, maybe not in the future
+    if (clipped) { Igor::Todo("apply_left_align: Clipped Neumann not implemeted yet."); }
+    grid.foreach_range(
+        0, 1, 0, s.ny(), FOREACH_FUNC {
+          for (i = -s.nghost(); i < 0; ++i) {
+            s(i, j) = s(-i, j);
+          }
+          s(0, j) = (4.0 * s(1, j) - s(2, j)) / 3.0;
+        });
   }
 
   // = RIGHT =======================================================================================
@@ -314,8 +320,14 @@ struct Neumann {
   static constexpr void apply_right_align(const Grid<Float, LAYOUT>& grid,
                                           Scalar<Float, LAYOUT> s,
                                           bool clipped = false) noexcept {
-    // TODO: This is incorrect: u(nx,j) is never adjusted and we need u(nx-k,j) = u(nx+k,j)
-    return apply_right_offset(grid, s, clipped);  // The same, maybe not in the future
+    if (clipped) { Igor::Todo("apply_right_align: Clipped Neumann not implemeted yet."); }
+    grid.foreach_range(
+        0, 1, 0, s.ny(), FOREACH_FUNC {
+          for (i = s.nx(); i < s.nx() + s.nghost(); ++i) {
+            s(i, j) = s(2 * s.nx() - i - 2, j);
+          }
+          s(s.nx() - 1, j) = (4.0 * s(s.nx() - 2, j) - s(s.nx() - 3, j)) / 3.0;
+        });
   }
 
   // = BOTTOM ======================================================================================
@@ -336,8 +348,14 @@ struct Neumann {
   static constexpr void apply_bottom_align(const Grid<Float, LAYOUT>& grid,
                                            Scalar<Float, LAYOUT> s,
                                            bool clipped = false) noexcept {
-    // TODO: This is incorrect: v(i,0) is never adjusted and we need u(i,-k) = u(i,k)
-    return apply_bottom_offset(grid, s, clipped);
+    if (clipped) { Igor::Todo("apply_bottom_align: Clipped Neumann not implemeted yet."); }
+    grid.foreach_range(
+        -s.nghost(), s.nx() + s.nghost(), 0, 1, FOREACH_FUNC {
+          for (j = -s.nghost(); j < 0; ++j) {
+            s(i, j) = s(i, -j);
+          }
+          s(i, 0) = (4.0 * s(i, 1) - s(i, 2)) / 3.0;
+        });
   }
 
   // = TOP =========================================================================================
@@ -358,8 +376,15 @@ struct Neumann {
   static constexpr void apply_top_align(const Grid<Float, LAYOUT>& grid,
                                         Scalar<Float, LAYOUT> s,
                                         bool clipped = false) noexcept {
-    // TODO: This is incorrect: v(i,ny) is never adjusted and we need u(i,ny-k) = u(i,ny+k)
-    return apply_top_offset(grid, s, clipped);
+    grid.foreach_range(
+        -s.nghost(), s.nx() + s.nghost(), 0, 1, FOREACH_FUNC {
+          for (j = s.ny(); j < s.ny() + s.nghost(); ++j) {
+            const auto fill_value = s(i, 2 * s.ny() - j - 2);
+            s(i, j)               = clipped && fill_value < 0.0 ? 0.0 : fill_value;
+          }
+          const auto fill_value = (4.0 * s(i, s.ny() - 2) - s(i, s.ny() - 3)) / 3.0;
+          s(i, s.ny() - 1)      = clipped && fill_value < 0.0 ? 0.0 : fill_value;
+        });
   }
 };
 
