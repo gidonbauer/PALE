@@ -48,6 +48,7 @@ ALL_TESTS = [
     TestCase("Advection-Polar",     [16, 32, 64, 128],          False),
     TestCase("Multigrid",           [32, 64, 128, 512, 1024],   False),
     TestCase("Iterator",            None,                       True),
+    TestCase("Boundary",            None,                       False),
 ]
 
 
