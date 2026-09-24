@@ -259,7 +259,7 @@ class Grid {
       std::for_each(std::execution::par_unseq,
                     IotaIter<Index>(0),
                     IotaIter<Index>(n_outer * n_tiles_per_outer),
-                    [=](Index tile_idx) mutable {
+                    [=](Index tile_idx) {
                       const Index outer = tile_idx / n_tiles_per_outer;
                       const Index start = (tile_idx % n_tiles_per_outer) * tile_size;
                       const Index stop  = std::min(start + tile_size, n_inner);

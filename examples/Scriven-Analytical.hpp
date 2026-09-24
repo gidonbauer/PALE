@@ -117,7 +117,7 @@ constexpr auto R_dot(double t, const Params& p) -> double {
 
 constexpr auto t(double R, const Params& p) -> double { return sq(R / (2.0 * p.beta)) / p.alpha; }
 
-constexpr auto T(double r, double t, Params& p) -> double {
+constexpr auto T(double r, double t, Params p) -> double {
   const double s = r / (2.0 * std::sqrt(p.alpha * t));
   switch (p.dimension) {
     case 2:

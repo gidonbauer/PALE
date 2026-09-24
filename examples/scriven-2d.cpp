@@ -239,7 +239,7 @@ auto main(int argc, char** argv) -> int {
       .bottom = Dirichlet<Float>{.val = Tsat},
       .top    = Dirichlet<Float>{.val = Tinf},
   };
-  grid.foreach_i(FOREACH_FUNC mutable { T(i, j) = Scriven::T(grid.rm(j), t, params); });
+  grid.foreach_i(FOREACH_FUNC { T(i, j) = Scriven::T(grid.rm(j), t, params); });
   apply_bconds(grid, s_bconds, T, t);
 
   // - Output ------------------------------------------------------------------
@@ -381,6 +381,21 @@ auto main(int argc, char** argv) -> int {
       if (!writer.write(t)) { return 1; }
     }
   }
+
+  const auto L1_T = grid.transform_reduce_range(
+      grid.ntheta() / 2,
+      grid.ntheta() / 2 + 1,
+      0,
+      grid.nr(),
+      0.0,
+      FOREACH_FUNC->Float {
+        const auto r     = grid.rm(j);
+        const auto T_exp = Scriven::T(r, t, params);
+        return std::abs(T(i, j) - T_exp) * grid.dr();
+      },
+      std::plus<>{});
+
+  Igor::Info("L1(T) = {}", L1_T);
 
   Igor::Info("Ok.");
 }
