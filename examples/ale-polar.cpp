@@ -244,6 +244,7 @@ auto main(int argc, char** argv) -> int {
 
       // 2) Prediction
       ALEPolar::calc_mom_flux(grid, u, p, rho, mu, w, FUX, FUY, FVX, FVY);
+      ALEPolar::calc_advection_flux(grid, u, s, w, D, Fs);
       ALEPolar::update_u(grid, local_dt, w, FUX, FUY, FVX, FVY, u_old, u);
       apply_velocity_bconds(grid, uth_bconds, ur_bconds, u);
 
@@ -270,7 +271,6 @@ auto main(int argc, char** argv) -> int {
       apply_velocity_bconds_only_periodic(grid, uth_bconds, ur_bconds, u);
 
       // 6) Update scalar
-      ALEPolar::calc_advection_flux(grid, u, s, w, D, Fs);
       ALEPolar::update_s(grid, local_dt, w, Fs, s_old, s);
       apply_bconds(grid, s_bconds, s, t);
     }

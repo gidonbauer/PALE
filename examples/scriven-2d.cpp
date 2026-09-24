@@ -269,14 +269,14 @@ auto main(int argc, char** argv) -> int {
   Float r_dot_relerr = r_dot_abserr / Scriven::R_dot(t, params);
   Float beta_relerr  = beta_abserr / params.beta;
 
-  // Float mg_res      = 0.0;
-  // Index mg_cycles   = 0;
+  Float mg_res       = 0.0;
+  Index mg_cycles    = 0;
 
   Monitor<Float> monitor(output_dir + "/monitor.log");
   monitor.add_variable(&t, "t");
   monitor.add_variable(&dt, "dt");
-  // monitor.add_variable(&p_stats.max, "max(p)");
-  // monitor.add_variable(&u_stats.max, "max(u_theta)");
+  monitor.add_variable(&p_stats.max, "max(p)");
+  monitor.add_variable(&u_stats.max, "max(u_theta)");
   monitor.add_variable(&v_stats.max, "max(u_r)");
   monitor.add_variable(&T_stats.min, "min(T)");
   monitor.add_variable(&T_stats.max, "max(T)");
@@ -291,8 +291,8 @@ auto main(int argc, char** argv) -> int {
   monitor.add_variable(&r_dot_relerr, "relerr(r_dot)");
   monitor.add_variable(&beta_relerr, "relerr(beta)");
   monitor.add_variable(&div_max, "absmax(div)");
-  // monitor.add_variable(&mg_res, "res(MG)");
-  // monitor.add_variable(&mg_cycles, "cycles(MG)");
+  monitor.add_variable(&mg_res, "res(MG)");
+  monitor.add_variable(&mg_cycles, "cycles(MG)");
   monitor.write();
   // - Output ------------------------------------------------------------------
 
@@ -309,7 +309,8 @@ auto main(int argc, char** argv) -> int {
     copy(u, u_old);
     copy(T, T_old);
 
-    // mg_cycles = 0;
+    mg_cycles = 0;
+    Vec2<Float> w0{};
     for (Index sub_iter = 0; sub_iter < 2; ++sub_iter) {
       const auto local_dt = sub_iter == 0 ? 0.5 * dt : dt;
 
@@ -318,9 +319,11 @@ auto main(int argc, char** argv) -> int {
       r_dot            = calc_r_dot(grid.y_min(), m_dot_total);
       w.r()            = r_dot;
       ur_bconds.bottom = Dirichlet<Float>{.val = eps * w.r()};
+      if (sub_iter == 0) { w0 = w; }
 
       // 2) Prediction
       ALEPolar::calc_mom_flux(grid, u, p, rhol, mul, w, FUX, FUY, FVX, FVY);
+      ALEPolar::calc_advection_flux(grid, u, T, w, alphal, FT);
       ALEPolar::update_u(grid, local_dt, w, FUX, FUY, FVX, FVY, u_old, u);
       apply_velocity_bconds(grid, uth_bconds, ur_bconds, u);
 
@@ -338,8 +341,8 @@ auto main(int argc, char** argv) -> int {
                    solver.num_cycles(),
                    solver.res());
       }
-      // mg_res     = solver.res();
-      // mg_cycles += solver.num_cycles();
+      mg_res     = solver.res();
+      mg_cycles += solver.num_cycles();
       apply_bconds(grid, dp_bconds, dp, t);
 
       // 5) Projection
@@ -347,8 +350,7 @@ auto main(int argc, char** argv) -> int {
       apply_velocity_bconds_only_periodic(grid, uth_bconds, ur_bconds, u);
 
       // 6) Update temperature
-      ALEPolar::calc_advection_flux(grid, u, T, w, alphal, FT);
-      ALEPolar::update_s(grid, local_dt, w, FT, T_old, T);
+      ALEPolar::update_s(grid, local_dt, sub_iter == 0 ? w : (w0 + w) / 2.0, FT, T_old, T);
       apply_bconds(grid, s_bconds, T, t);
     }
     ALEPolar::calc_div(grid, u, div);
@@ -361,6 +363,7 @@ auto main(int argc, char** argv) -> int {
     T_stats       = stats(grid, T);
     div_max       = std::max(std::abs(div_stats.min), std::abs(div_stats.max));
 
+    t            += dt;
     beta_eff      = Scriven::beta_eff(r, r_dot, params);
     r             = grid.y_min();
     m_dot_total   = calc_m_dot_total(grid, T);
@@ -372,7 +375,6 @@ auto main(int argc, char** argv) -> int {
     r_dot_relerr  = r_dot_abserr / Scriven::R_dot(t, params);
     beta_relerr   = beta_abserr / params.beta;
 
-    t            += dt;
     monitor.write();
     if (should_save(t, dt, dt_write, tend)) {
       writer.update_grid(grid);
