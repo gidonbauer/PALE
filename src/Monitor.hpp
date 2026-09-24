@@ -73,10 +73,10 @@ class Monitor {
                     "Expected to hold exactly two alternatives.");
       switch (val.index()) {
         case 0:
-          m_out << Igor::detail::format("{:^{}.6e} | ", *std::get<Float const*>(val), length);
+          m_out << Igor::detail::format("{:>{}.6e} | ", *std::get<Float const*>(val), length);
           break;
         case 1:
-          m_out << Igor::detail::format("{:^{}} | ", *std::get<Index const*>(val), length);
+          m_out << Igor::detail::format("{:>{}} | ", *std::get<Index const*>(val), length);
           break;
         default: Igor::Panic("Unreachable."); std::unreachable();
       }

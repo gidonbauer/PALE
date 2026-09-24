@@ -1,6 +1,6 @@
 TARGETS = ${addprefix bin/, ${basename ${notdir ${wildcard examples/*.cpp}}}}
 POISFFT_TARGETS = bin/advection-diffusion bin/mac bin/lid-driven-cavity bin/taylor-green
-GSL_TARGETS = bin/scriven
+GSL_TARGETS = bin/scriven bin/scriven-2d
 
 HEADERS = ${wildcard src/*.hpp}
 
