@@ -124,8 +124,7 @@ auto main(int argc, char** argv) -> int {
     return 1;
   }
 
-  // const auto output_dir = get_output_directory();
-  const std::string output_dir = "./output/scriven-2d-new";
+  const auto output_dir = get_output_directory();
   if (!init_output_directory(output_dir)) { return 1; }
 
   Grid<Float> grid(theta_min, theta_max, N / 2, r_min, r_max, N, 3, Coordinates::POLAR);

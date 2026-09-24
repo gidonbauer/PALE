@@ -2,7 +2,33 @@
 
 #include <variant>
 
+#include <Igor/Math.hpp>
+
 #include "Grid.hpp"
+
+namespace detail {
+
+template <typename Float>
+constexpr auto calc_offset_quadratic_coefficients(Float v, Float F0, Float F1)
+    -> std::array<Float, 3> {
+  return {
+      v,
+      (9.0 * F0 - F1 - 8.0 * v) / 3.0,
+      (-6.0 * F0 + 2.0 * F1 + 4.0 * v) / 3.0,
+  };
+}
+
+template <typename Float>
+constexpr auto calc_align_quadratic_coefficients(Float v, Float F1, Float F2)
+    -> std::array<Float, 3> {
+  return {
+      v,
+      (4.0 * F1 - F2 - 3.0 * v) / 2.0,
+      (-2.0 * F1 + F2 + v) / 2.0,
+  };
+}
+
+}  // namespace detail
 
 // =================================================================================================
 template <typename Float>
@@ -19,14 +45,23 @@ struct Dirichlet {
                     std::variant<Float, Float (*)(Float, Float)> value) noexcept {
     grid.foreach_range(
         0, 1, 0, s.ny(), FOREACH_FUNC {
-          // Linear extrapolation
-          const auto s0 = s(0, j);
-          const auto y  = use_ym ? grid.ym(j) : grid.y(j);
+          const auto y = use_ym ? grid.ym(j) : grid.y(j);
           const auto v =
               std::holds_alternative<Float>(value) ? std::get<0>(value) : std::get<1>(value)(y, t);
+#ifdef PALE_BCONDS_LINEAR
+          // Linear extrapolation
+          const auto s0 = s(0, j);
           for (i = -s.nghost(); i < 0; ++i) {
             s(i, j) = s0 - 2.0 * (v - s0) * i;
           }
+#else
+          // Quadratic extrapolation
+          const auto c = detail::calc_offset_quadratic_coefficients(v, s(0, j), s(1, j));
+          for (i = -s.nghost(); i < 0; ++i) {
+            const Float x = i + 0.5;
+            s(i, j)       = c[0] + c[1] * x + c[2] * Igor::sqr(x);
+          }
+#endif
         });
   }
 
@@ -39,14 +74,22 @@ struct Dirichlet {
                    std::variant<Float, Float (*)(Float, Float)> value) noexcept {
     grid.foreach_range(
         0, 1, 0, s.ny(), FOREACH_FUNC {
-          // Linear extrapolation
-          const auto s1 = s(1, j);
-          const auto y  = use_ym ? grid.ym(j) : grid.y(j);
+          const auto y = use_ym ? grid.ym(j) : grid.y(j);
           const auto v =
               std::holds_alternative<Float>(value) ? std::get<0>(value) : std::get<1>(value)(y, t);
+#ifdef PALE_BCONDS_LINEAR
+          // Linear extrapolation
+          const auto s1 = s(1, j);
           for (i = -s.nghost(); i <= 0; ++i) {
             s(i, j) = s1 - (v - s1) * (i - 1);
           }
+#else
+          // Quadratic extrapolation
+          const auto c = detail::calc_align_quadratic_coefficients(v, s(1, j), s(2, j));
+          for (i = -s.nghost(); i <= 0; ++i) {
+            s(i, j) = c[0] + c[1] * i + c[2] * Igor::sqr(i);
+          }
+#endif
         });
   }
 
@@ -60,14 +103,23 @@ struct Dirichlet {
                      std::variant<Float, Float (*)(Float, Float)> value) noexcept {
     grid.foreach_range(
         0, 1, 0, s.ny(), FOREACH_FUNC {
-          // Linear extrapolation
-          const auto sN = s(s.nx() - 1, j);
-          const auto y  = use_ym ? grid.ym(j) : grid.y(j);
+          const auto y = use_ym ? grid.ym(j) : grid.y(j);
           const auto v =
               std::holds_alternative<Float>(value) ? std::get<0>(value) : std::get<1>(value)(y, t);
+#ifdef PALE_BCONDS_LINEAR
+          // Linear extrapolation
+          const auto sN = s(s.nx() - 1, j);
           for (i = s.nx(); i < s.nx() + s.nghost(); ++i) {
             s(i, j) = sN + 2.0 * (v - sN) * (i - s.nx() + 1);
           }
+#else
+          // Quadratic extrapolation
+          const auto c = detail::calc_offset_quadratic_coefficients(v, s(s.nx() - 1, j), s(s.nx() - 2, j));
+          for (i = s.nx(); i < s.nx() + s.nghost(); ++i) {
+            const Float x = s.nx() - i - 1 + 0.5;
+            s(i, j)       = c[0] + c[1] * x + c[2] * Igor::sqr(x);
+          }
+#endif
         });
   }
 
@@ -80,14 +132,23 @@ struct Dirichlet {
                     std::variant<Float, Float (*)(Float, Float)> value) noexcept {
     grid.foreach_range(
         0, 1, 0, s.ny(), FOREACH_FUNC {
-          // Linear extrapolation
-          const auto sN = s(s.nx() - 2, j);
-          const auto y  = use_ym ? grid.ym(j) : grid.y(j);
+          const auto y = use_ym ? grid.ym(j) : grid.y(j);
           const auto v =
               std::holds_alternative<Float>(value) ? std::get<0>(value) : std::get<1>(value)(y, t);
+#ifdef PALE_BCONDS_LINEAR
+          // Linear extrapolation
+          const auto sN = s(s.nx() - 2, j);
           for (i = s.nx() - 1; i < s.nx() + s.nghost(); ++i) {
             s(i, j) = sN + (v - sN) * (i - s.nx() + 2);
           }
+#else
+          // Quadratic extrapolation
+          const auto c = detail::calc_align_quadratic_coefficients(v, s(s.nx()-2, j), s(s.nx()-3, j));
+          for (i = s.nx() - 1; i < s.nx() + s.nghost(); ++i) {
+            const Float x = s.nx() - i - 1;
+            s(i, j)       = c[0] + c[1] * x + c[2] * Igor::sqr(x);
+          }
+#endif
         });
   }
 
@@ -101,14 +162,23 @@ struct Dirichlet {
                       std::variant<Float, Float (*)(Float, Float)> value) noexcept {
     grid.foreach_range(
         -s.nghost(), s.nx() + s.nghost(), 0, 1, FOREACH_FUNC {
-          // Linear extrapolation
-          const auto s0 = s(i, 0);
-          const auto x  = use_xm ? grid.xm(i) : grid.x(i);
+          const auto x = use_xm ? grid.xm(i) : grid.x(i);
           const auto v =
               std::holds_alternative<Float>(value) ? std::get<0>(value) : std::get<1>(value)(x, t);
+#ifdef PALE_BCONDS_LINEAR
+          // Linear extrapolation
+          const auto s0 = s(i, 0);
           for (j = -s.nghost(); j < 0; ++j) {
             s(i, j) = s0 - 2.0 * (v - s0) * j;
           }
+#else
+          // Quadratic extrapolation
+          const auto c = detail::calc_offset_quadratic_coefficients(v, s(i, 0), s(i, 1));
+          for (j = -s.nghost(); j < 0; ++j) {
+            const Float y = j + 0.5;
+            s(i, j)       = c[0] + c[1] * y + c[2] * Igor::sqr(y);
+          }
+#endif
         });
   }
 
@@ -121,14 +191,22 @@ struct Dirichlet {
                      std::variant<Float, Float (*)(Float, Float)> value) noexcept {
     grid.foreach_range(
         -s.nghost(), s.nx() + s.nghost(), 0, 1, FOREACH_FUNC {
-          // Linear extrapolation
-          const auto s1 = s(i, 1);
-          const auto x  = use_xm ? grid.xm(i) : grid.x(i);
+          const auto x = use_xm ? grid.xm(i) : grid.x(i);
           const auto v =
               std::holds_alternative<Float>(value) ? std::get<0>(value) : std::get<1>(value)(x, t);
+#ifdef PALE_BCONDS_LINEAR
+          // Linear extrapolation
+          const auto s1 = s(i, 1);
           for (j = -s.nghost(); j <= 0; ++j) {
             s(i, j) = s1 - (v - s1) * (j - 1);
           }
+#else
+          // Quadratic extrapolation
+          const auto c = detail::calc_align_quadratic_coefficients(v, s(i, 1), s(i, 2));
+          for (j = -s.nghost(); j <= 0; ++j) {
+            s(i, j) = c[0] + c[1] * j + c[2] * Igor::sqr(j);
+          }
+#endif
         });
   }
 
@@ -142,14 +220,23 @@ struct Dirichlet {
                    std::variant<Float, Float (*)(Float, Float)> value) noexcept {
     grid.foreach_range(
         -s.nghost(), s.nx() + s.nghost(), 0, 1, FOREACH_FUNC {
-          // Linear extrapolation
-          const auto sN = s(i, s.ny() - 1);
-          const auto x  = use_xm ? grid.xm(i) : grid.x(i);
+          const auto x = use_xm ? grid.xm(i) : grid.x(i);
           const auto v =
               std::holds_alternative<Float>(value) ? std::get<0>(value) : std::get<1>(value)(x, t);
+#ifdef PALE_BCONDS_LINEAR
+          // Linear extrapolation
+          const auto sN = s(i, s.ny() - 1);
           for (j = s.ny(); j < s.ny() + s.nghost(); ++j) {
             s(i, j) = sN + 2.0 * (v - sN) * (j - s.ny() + 1);
           }
+#else
+          // Quadratic extrapolation
+          const auto c = detail::calc_offset_quadratic_coefficients(v, s(i, s.ny() - 1), s(i, s.ny() - 2));
+          for (j = s.ny(); j < s.ny() + s.nghost(); ++j) {
+            const Float y = s.ny() - j - 1 + 0.5;
+            s(i, j)       = c[0] + c[1] * y + c[2] * Igor::sqr(y);
+          }
+#endif
         });
   }
 
@@ -162,14 +249,23 @@ struct Dirichlet {
                   std::variant<Float, Float (*)(Float, Float)> value) noexcept {
     grid.foreach_range(
         -s.nghost(), s.nx() + s.nghost(), 0, 1, FOREACH_FUNC {
-          // Linear extrapolation
-          const auto sN = s(i, s.ny() - 2);
-          const auto x  = use_xm ? grid.xm(i) : grid.x(i);
+          const auto x = use_xm ? grid.xm(i) : grid.x(i);
           const auto v =
               std::holds_alternative<Float>(value) ? std::get<0>(value) : std::get<1>(value)(x, t);
+#ifdef PALE_BCONDS_LINEAR
+          // Linear extrapolation
+          const auto sN = s(i, s.ny() - 2);
           for (j = s.ny() - 1; j < s.ny() + s.nghost(); ++j) {
             s(i, j) = sN + (v - sN) * (j - s.ny() + 2);
           }
+#else
+          // Quadratic extrapolation
+          const auto c = detail::calc_align_quadratic_coefficients(v, s(i, s.ny()-2), s(i, s.ny()-3));
+          for (j = s.ny() - 1; j < s.ny() + s.nghost(); ++j) {
+            const Float y = s.ny() - j - 1;
+            s(i, j)       = c[0] + c[1] * y + c[2] * Igor::sqr(y);
+          }
+#endif
         });
   }
 };
