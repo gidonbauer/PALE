@@ -21,7 +21,7 @@ using Float               = double;
 constexpr Float pi        = std::numbers::pi_v<Float>;
 
 constexpr Float r_min     = 0.25e-3;  // Initial radius                     [m]
-constexpr Float r_max     = 15.0 * r_min;
+constexpr Float r_max     = 20.0 * r_min;
 constexpr Float theta_min = 0.0;
 constexpr Float theta_max = pi;
 
@@ -43,11 +43,12 @@ constexpr Float cpg = 2.2177e3;  // Specific heat capacity    [J/(kg K)]
 constexpr Float Tsat = 111.0;     // Saturation temperature    [K]
 constexpr Float Tinf = 111.26;    // Bulk temperature          [K]
 constexpr Float hev  = 5.1083e5;  // Enthalpy of vaporization  [J/kg]
-constexpr Float eps  = (rhol - rhog) / rhol;
 
-// Jakob number
-// constexpr Float Ja    = rhol * cpl * (Tinf - Tsat) / (hev * rhog);
-constexpr Float Ja    = rhol * cpl * (Tinf - Tsat) / (rhog * (hev + (cpl - cpg) * (Tinf - Tsat)));
+// Dimensionless numbers relevant for Scriven case
+constexpr Float eps = (rhol - rhog) / rhol;  // Relative difference of density [-]
+// constexpr Float Ja    = rhol * cpl * (Tinf - Tsat) / (hev * rhog); // Simplified Jakob number [-]
+constexpr Float Ja =
+    rhol * cpl * (Tinf - Tsat) / (rhog * (hev + (cpl - cpg) * (Tinf - Tsat)));  // Jakob number [-]
 
 constexpr Float CFL   = 0.5;
 constexpr Float r_end = 2.0 * r_min;  // Final radius                       [m]
