@@ -1,6 +1,7 @@
 import numpy as np
 from matplotlib import pyplot as plt
 import pandas as pd
+from scipy.integrate import simpson
 import sys
 from argparse import ArgumentParser
 import json
@@ -34,6 +35,9 @@ def main():
         print(err, file=sys.stderr)
         sys.exit(1)
 
+    R_L1 = simpson(np.abs(df['r'] - R(df['t'], s)), df['t'])
+    R_dot_L1 = simpson(np.abs(df['r_dot'] - R_dot(df['t'], s)), df['t'])
+
     fig, ax = plt.subplots(nrows=2, ncols=2, figsize=(10, 5), layout="tight")
 
     # - Radius ---------------------------------------------
@@ -46,6 +50,10 @@ def main():
     ax[0, 0].set_xlabel('Time [s]')
     ax[0, 0].set_ylabel('Radius [µm]')
     ax[0, 0].legend()
+    ax[0, 0].annotate(f'$L_1$-error = {R_L1:.8f}',
+                      xy=(0.55, 0.1),
+                      xycoords='axes fraction',
+                      bbox=dict(facecolor='none', edgecolor='black'))
     # - Radius ---------------------------------------------
 
     # - Change of radius -----------------------------------
@@ -57,6 +65,10 @@ def main():
     ax[1, 0].set_xlabel('Time [s]')
     ax[1, 0].set_ylabel('Change of radius [µm/s]')
     ax[1, 0].legend()
+    ax[1, 0].annotate(f'$L_1$-error = {R_dot_L1:.8f}',
+                      xy=(0.05, 0.1),
+                      xycoords='axes fraction',
+                      bbox=dict(facecolor='none', edgecolor='black'))
     # - Change of radius -----------------------------------
 
     # - Effective beta -------------------------------------
