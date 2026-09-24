@@ -196,6 +196,7 @@ struct Neumann {
   static constexpr void apply_left_align(const Grid<Float, LAYOUT>& grid,
                                          Scalar<Float, LAYOUT> s,
                                          bool clipped = false) noexcept {
+    // TODO: This is incorrect: u(0,j) is never adjusted and we need u(-k,j) = u(k,j)
     return apply_left_offset(grid, s, clipped);  // The same, maybe not in the future
   }
 
@@ -217,6 +218,7 @@ struct Neumann {
   static constexpr void apply_right_align(const Grid<Float, LAYOUT>& grid,
                                           Scalar<Float, LAYOUT> s,
                                           bool clipped = false) noexcept {
+    // TODO: This is incorrect: u(nx,j) is never adjusted and we need u(nx-k,j) = u(nx+k,j)
     return apply_right_offset(grid, s, clipped);  // The same, maybe not in the future
   }
 
@@ -238,6 +240,7 @@ struct Neumann {
   static constexpr void apply_bottom_align(const Grid<Float, LAYOUT>& grid,
                                            Scalar<Float, LAYOUT> s,
                                            bool clipped = false) noexcept {
+    // TODO: This is incorrect: v(i,0) is never adjusted and we need u(i,-k) = u(i,k)
     return apply_bottom_offset(grid, s, clipped);
   }
 
@@ -259,6 +262,7 @@ struct Neumann {
   static constexpr void apply_top_align(const Grid<Float, LAYOUT>& grid,
                                         Scalar<Float, LAYOUT> s,
                                         bool clipped = false) noexcept {
+    // TODO: This is incorrect: v(i,ny) is never adjusted and we need u(i,ny-k) = u(i,ny+k)
     return apply_top_offset(grid, s, clipped);
   }
 };
