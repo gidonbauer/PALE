@@ -149,9 +149,9 @@ auto main(int argc, char** argv) -> int {
   Monitor<Float> monitor(output_dir + "/monitor.log");
   monitor.add_variable(&t, "t");
   monitor.add_variable(&dt, "dt");
-  monitor.add_variable(&p_stats.max, "abs(p)");
-  monitor.add_variable(&u_stats.max, "abs(u)");
-  monitor.add_variable(&v_stats.max, "abs(v)");
+  monitor.add_variable(&p_stats.max, "max(p)");
+  monitor.add_variable(&u_stats.max, "max(u)");
+  monitor.add_variable(&v_stats.max, "max(v)");
   monitor.add_variable(&div_max, "absmax(div)");
   monitor.add_variable(&mg_res, "res(MG)");
   monitor.add_variable(&mg_num_pre, "iter_pre(MG)");
@@ -159,8 +159,9 @@ auto main(int argc, char** argv) -> int {
   monitor.add_variable(&mg_cycles, "cycles(MG)");
   monitor.write();
 
+  bool any_failed = false;
   IGOR_TIME_SCOPE("Solver")
-  while (t < tend) {
+  while (t < tend && !any_failed) {
     dt = std::min({
         adjust_dt(grid, u, rho, mu, CFL),
         dt_write,
@@ -199,13 +200,30 @@ auto main(int argc, char** argv) -> int {
     interpolate(grid, u, ui);
     calc_div(grid, u, div);
 
-    p_stats    = stats(grid, p);
-    u_stats    = stats(grid, u.x);
-    v_stats    = stats(grid, u.y);
-    div_stats  = stats(grid, div);
-    div_max    = std::max(std::abs(div_stats.min), std::abs(div_stats.max));
+    p_stats   = stats(grid, p);
+    u_stats   = stats(grid, u.x);
+    v_stats   = stats(grid, u.y);
+    div_stats = stats(grid, div);
+    div_max   = std::max(std::abs(div_stats.min), std::abs(div_stats.max));
 
-    t         += dt;
+    if (std::isnan(p_stats.max)) {
+      Igor::Error("NaN value in p: Simulation diverged.");
+      any_failed = true;
+    }
+    if (std::isnan(u_stats.max)) {
+      Igor::Error("NaN value in u: Simulation diverged.");
+      any_failed = true;
+    }
+    if (std::isnan(v_stats.max)) {
+      Igor::Error("NaN value in v: Simulation diverged.");
+      any_failed = true;
+    }
+    if (std::isnan(div_max)) {
+      Igor::Error("NaN value in div: Simulation diverged.");
+      any_failed = true;
+    };
+
+    t += dt;
     if (should_save(t, dt, dt_write, tend)) {
       if (!writer.write(t)) { return 1; }
     }
@@ -230,8 +248,8 @@ auto main(int argc, char** argv) -> int {
     Igor::Error("u_theta error does not match expected value: expected {:.8e} but got {:.8e}",
                 Expected::L1(N),
                 L1);
-    return 1;
+    any_failed = true;
   }
 
-  Igor::Info("Ok.");
+  return any_failed ? 1 : 0;
 }

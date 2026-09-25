@@ -11,6 +11,7 @@
 #include "HDFWriter.hpp"
 #include "IO.hpp"
 #include "Mac.hpp"
+#include "MacPolar.hpp"
 #include "Monitor.hpp"
 #include "MultigridPoisson.hpp"
 

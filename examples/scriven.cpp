@@ -11,6 +11,7 @@
 #include "HDFWriter.hpp"
 #include "IO.hpp"
 #include "Mac.hpp"
+#include "MacPolar.hpp"
 #include "Monitor.hpp"
 #include "MultigridPoisson.hpp"
 
@@ -144,12 +145,13 @@ auto main(int argc, char** argv) -> int {
   auto FT    = grid.alloc_face_vector();
 
   Scriven::Params params{
-      .Ja    = rhol * cpl * (Tinf - Tsat) / (hev * rhog),
-      .eps   = eps,
-      .alpha = alphal,
-      .Tsat  = Tsat,
-      .Tinf  = Tinf,
-      .beta  = 0.0,
+      .Ja        = rhol * cpl * (Tinf - Tsat) / (hev * rhog),
+      .eps       = eps,
+      .alpha     = alphal,
+      .Tsat      = Tsat,
+      .Tinf      = Tinf,
+      .beta      = 0.0,
+      .dimension = 3,
   };
   Scriven::calc_beta(params);
   Igor::Info("Scriven::Params = {{");
@@ -227,8 +229,8 @@ auto main(int argc, char** argv) -> int {
   Float r_dot       = calc_r_dot(r, m_dot_total);
   Float beta_eff    = Scriven::beta_eff(r, r_dot, params);
 
-  Float mg_res      = 0.0;
-  Index mg_cycles   = 0;
+  // Float mg_res      = 0.0;
+  // Index mg_cycles   = 0;
 
   Monitor<Float> monitor(output_dir + "/monitor.log");
   monitor.add_variable(&t, "t");
@@ -261,7 +263,7 @@ auto main(int argc, char** argv) -> int {
     copy(u, u_old);
     copy(T, T_old);
 
-    mg_cycles = 0;
+    // mg_cycles = 0;
     // 1) Mass exchange -> grid velocity
     m_dot_total      = calc_m_dot_total(grid, T);
     r_dot            = calc_r_dot(grid.y_min(), m_dot_total);
@@ -289,8 +291,8 @@ auto main(int argc, char** argv) -> int {
                    solver.num_cycles(),
                    solver.res());
       }
-      mg_res     = solver.res();
-      mg_cycles += solver.num_cycles();
+      // mg_res     = solver.res();
+      // mg_cycles += solver.num_cycles();
       apply_bconds(grid, dp_bconds, dp, t);
 
       // 5) Projection

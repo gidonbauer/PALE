@@ -11,6 +11,7 @@
 #include "HDFWriter.hpp"
 #include "IO.hpp"
 #include "Mac.hpp"
+#include "MacPolar.hpp"
 #include "Monitor.hpp"
 #include "MultigridPoisson.hpp"
 
@@ -395,7 +396,15 @@ auto main(int argc, char** argv) -> int {
       },
       std::plus<>{});
 
+  Igor::Info("N     = {}", N);
   Igor::Info("L1(T) = {}", L1_T);
+  Igor::Info("abserr(r) = {}", r_abserr);
+  Igor::Info("abserr(r_dot) = {}", r_dot_abserr);
+  Igor::Info("abserr(beta) = {}", beta_abserr);
+  Igor::Info("relerr(r) = {}", r_relerr);
+  Igor::Info("relerr(r_dot) = {}", r_dot_relerr);
+  Igor::Info("relerr(beta) = {}", beta_relerr);
+  std::cout << '\n';
 
   Igor::Info("Ok.");
 }
