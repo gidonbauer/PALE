@@ -1,4 +1,11 @@
-DEFAULT_BUILD_TESTS = test/Advection-Cartesian.cpp test/Advection-Polar.cpp test/Iterator.cpp test/Polar-Couette.cpp test/Polar-Channel.cpp test/Boundary.cpp test/Multigrid-Spherical.cpp
+DEFAULT_BUILD_TESTS = test/Advection-Cartesian.cpp \
+                      test/Advection-Polar.cpp \
+                      test/Iterator.cpp \
+                      test/Polar-Couette.cpp \
+                      test/Polar-Channel.cpp \
+                      test/Boundary.cpp \
+                      test/Multigrid-Spherical.cpp \
+                      test/Hill-Vortex
 DEFAULT_BUILD_TESTS := ${addprefix bin/, ${basename ${DEFAULT_BUILD_TESTS}}}
 
 ${DEFAULT_BUILD_TESTS}: bin/test/%: test/%.cpp ${HEADERS} | bin/test test/output
