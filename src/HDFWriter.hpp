@@ -101,6 +101,7 @@ class HDFWriter {
             row_x[j] = m_x_min + static_cast<Float>(i) * m_dx;
             row_y[j] = m_y_min + static_cast<Float>(j) * m_dy;
             break;
+          case Coordinates::SYMMETRIC_SPHERICAL:
           case Coordinates::POLAR:
             const auto theta = m_x_min + static_cast<Float>(i) * m_dx;
             const auto r     = m_y_min + static_cast<Float>(j) * m_dy;
@@ -272,6 +273,7 @@ class HDFWriter {
       write_grid_unmaterialized(grid_group);
     } else if (x != nullptr && y != nullptr) {
       switch (m_coords) {
+        case Coordinates::SYMMETRIC_SPHERICAL:
         case Coordinates::POLAR: write_polar_grid_unmaterialized(grid_group, *x, *y); break;
         case Coordinates::CARTESIAN:
           write_scalar(grid_group, "x", x->scalar());
@@ -361,6 +363,7 @@ class HDFWriter {
           write_scalar(vector_group, name_x, values.x);
           write_scalar(vector_group, name_y, values.y);
           break;
+        case Coordinates::SYMMETRIC_SPHERICAL:
         case Coordinates::POLAR: write_vector_polar(vector_group, name_x, name_y, values); break;
       }
 

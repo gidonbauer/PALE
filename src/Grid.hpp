@@ -15,6 +15,8 @@
 
 #include <Igor/Logging.hpp>
 
+#include "Metrics.hpp"
+
 #if defined(__clang__) || defined(__GNUC__)
 #define PALE_FOREACH_DEF __attribute__((flatten)) __attribute__((always_inline))
 #else
@@ -51,7 +53,7 @@ constexpr Index MIN_TILE_SIZE     = 64;    // Min. tile size
 //       parallelization.
 enum class Layout { C, F };
 enum class Dimension { X, Y };
-enum class Coordinates { CARTESIAN, POLAR };
+enum class Coordinates { CARTESIAN, POLAR, SYMMETRIC_SPHERICAL };
 enum class Exec { PARALLEL, SERIAL };
 
 // =================================================================================================
@@ -176,10 +178,12 @@ class Grid {
   [[nodiscard]] constexpr auto y_max() const noexcept -> Float { return m_y_max; }
   [[nodiscard]] constexpr auto dy() const noexcept -> Float { return m_dy; }
   [[nodiscard]] constexpr auto ny() const noexcept -> Index { return m_ny; }
-  [[nodiscard]] constexpr auto dv(Index /*i*/, Index j) const noexcept -> Float {
+  [[nodiscard]] constexpr auto dv(Index i, Index j) const noexcept -> Float {
     switch (m_coords) {
       case Coordinates::CARTESIAN: return m_dx * m_dy;
-      case Coordinates::POLAR:     return ym(j) * m_dy * m_dx;
+      case Coordinates::POLAR:     return Metric::Polar::H(xm(i), ym(j)) * m_dx * m_dy;
+      case Coordinates::SYMMETRIC_SPHERICAL:
+        return Metric::SymmetricSpherical::H(xm(i), ym(j)) * m_dx * m_dy;
     }
     Igor::Panic("Unreachable");
   }

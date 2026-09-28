@@ -40,7 +40,7 @@ constexpr auto ale_adjust_dt(const Grid<Float, LAYOUT>& grid,
                              const Vec2<Float>& w_,
                              Float CFL_) noexcept -> Float {
   // Correction for polar coordinates
-  const auto hx = grid.coords() == Coordinates::POLAR ? grid.ym(0) * grid.dx() : grid.dx();
+  const auto hx = grid.coords() == Coordinates::CARTESIAN ? grid.dx() : grid.ym(0) * grid.dx();
   const auto hy = grid.dy();
 
   // Advection: dt * (|u|/hx + |v|/hy) <= CFL
@@ -78,6 +78,7 @@ constexpr void ale_update_J(const Grid<Float, LAYOUT>& grid,
         J(i, j)            = J_old(i, j) + dt * J_old(i, j) * (dFrdr + dFthdth / r + Fr / r);
       });
       return;
+    case Coordinates::SYMMETRIC_SPHERICAL: Igor::Todo();
   }
 }
 // =================================================================================================

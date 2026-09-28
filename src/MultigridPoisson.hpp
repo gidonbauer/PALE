@@ -4,6 +4,7 @@
 
 #include "BoundaryConditions.hpp"
 #include "Grid.hpp"
+#include "Metrics.hpp"
 
 template <typename Float, Layout LAYOUT>
 class MultigridSolver {
@@ -22,23 +23,34 @@ class MultigridSolver {
     Scalar rhs;
     Scalar res;
 
-    // Restriction weights; depend on cell volume
-    std::vector<Float> restrict_w_lo;
-    std::vector<Float> restrict_w_hi;
+    // Restriction weights; normalized cell volumes of the four fine cells, separable in x and y
+    std::vector<Float> restrict_wx_lo;  // (ic), fine cell 2*ic
+    std::vector<Float> restrict_wx_hi;  // (ic), fine cell 2*ic + 1
+    std::vector<Float> restrict_wy_lo;  // (jc), fine cell 2*jc
+    std::vector<Float> restrict_wy_hi;  // (jc), fine cell 2*jc + 1
 
-    // = Relevant only for polar coordinates ===================================
-    // Thomas coefficients for linear solver in r-direction in polar case
+    // Separable cell volume, grid.dv(i, j) = vol_x(i) * vol_y(j)
+    std::vector<Float> vol_x;  // (i)
+    std::vector<Float> vol_y;  // (j)
+
+    // Separable 5-point stencil of the Laplacian:
+    //   L(i, j) = st_gx(j) * (st_x_lo(i) * s(i - 1, j) + st_x_hi(i) * s(i + 1, j))
+    //           + st_y_lo(j) * s(i, j - 1) + st_y_hi(j) * s(i, j + 1) + st_diag(j) * s(i, j)
+    std::vector<Float> st_x_lo;  // (i)
+    std::vector<Float> st_x_hi;  // (i)
+    std::vector<Float> st_gx;    // (j)
+    std::vector<Float> st_y_lo;  // (j)
+    std::vector<Float> st_y_hi;  // (j)
+    std::vector<Float> st_diag;  // (j)
+
+    // = Relevant only for polar and symmetric spherical coordinates ===========
+    // Thomas coefficients for linear solver in r-direction
     std::vector<Float> tri_a;      // Sub-diagonal, zero at j = 0
     std::vector<Float> tri_cstar;  // Super-diagonal divided by the pivot
     std::vector<Float> tri_minv;   // Reciprocal of the pivot
     Float tri_bnd_lo = 0.0;  // Coupling to the ghost below, zero if it folds into the diagonal
     Float tri_bnd_hi = 0.0;  // Coupling to the ghost above, zero if it folds into the diagonal
-
-    // Polar stencil coefficients
-    std::vector<Float> tri_theta;  // (i, j)
-    std::vector<Float> tri_lo;     // (i, j - 1)
-    std::vector<Float> tri_hi;     // (i, j + 1)
-    // = Relevant only for polar coordinates ===================================
+    // = Relevant only for polar and symmetric spherical coordinates ===========
   };
   std::vector<Level> m_levels;
   BConds<Float> m_bconds;
@@ -49,50 +61,118 @@ class MultigridSolver {
 
   // -----------------------------------------------------------------------------------------------
   static constexpr void precompute_restriction_weights(const Level& fine, Level& coarse) {
-    const Index cny = coarse.grid.ny();
-    coarse.restrict_w_lo.resize(static_cast<size_t>(cny));
-    coarse.restrict_w_hi.resize(static_cast<size_t>(cny));
-
-    for (Index jc = 0; jc < cny; ++jc) {
-      const Float w_lo                              = fine.grid.dv(0, 2 * jc);
-      const Float w_hi                              = fine.grid.dv(0, 2 * jc + 1);
-      const Float norm                              = 1.0 / (2.0 * (w_lo + w_hi));
-
-      coarse.restrict_w_lo[static_cast<size_t>(jc)] = w_lo * norm;
-      coarse.restrict_w_hi[static_cast<size_t>(jc)] = w_hi * norm;
-    }
+    const auto calc_weights = [](const std::vector<Float>& vol,
+                                 Index nc,
+                                 std::vector<Float>& w_lo,
+                                 std::vector<Float>& w_hi) {
+      w_lo.resize(static_cast<size_t>(nc));
+      w_hi.resize(static_cast<size_t>(nc));
+      for (size_t c = 0; c < static_cast<size_t>(nc); ++c) {
+        const Float v_lo = vol[2 * c];
+        const Float v_hi = vol[2 * c + 1];
+        w_lo[c]          = v_lo / (v_lo + v_hi);
+        w_hi[c]          = v_hi / (v_lo + v_hi);
+      }
+    };
+    calc_weights(fine.vol_x, coarse.grid.nx(), coarse.restrict_wx_lo, coarse.restrict_wx_hi);
+    calc_weights(fine.vol_y, coarse.grid.ny(), coarse.restrict_wy_lo, coarse.restrict_wy_hi);
   }
 
   // -----------------------------------------------------------------------------------------------
-  // Precompute the coefficients for the Thomas algorithm in r-direction (y-direction);
-  // Only for polar coordinates
-  static constexpr void precompute_tridiag(Level& level, const BConds<Float>& bconds) {
-    if (level.grid.coords() != Coordinates::POLAR) { return; }
+  static constexpr void precompute_coefficients(Level& level, const BConds<Float>& bconds) {
+    switch (level.grid.coords()) {
+      case Coordinates::CARTESIAN:
+        return precompute_coefficients_impl<Metric::Cartesian>(level, bconds);
+      case Coordinates::POLAR: return precompute_coefficients_impl<Metric::Polar>(level, bconds);
+      case Coordinates::SYMMETRIC_SPHERICAL:
+        return precompute_coefficients_impl<Metric::SymmetricSpherical>(level, bconds);
+    }
+    Igor::Panic("Unreachable");
+  }
 
+  // Precompute the stencil, the cell volumes, and the coefficients for the Thomas algorithm in
+  // r-direction (y-direction).
+  //
+  // Discretizes L = 1/H * [d/dq1(H/h1^2 * ds/dq1) + d/dq2(H/h2^2 * ds/dq2)] in conservative form.
+  // Assumes that the metric is separable, i.e. h1 = h1(q2), h2 = h2(q2), and H = X(q1) * Y(q2).
+  // This holds for Cartesian, polar, and symmetric spherical coordinates. Then the q1-coupling
+  // factors as st_gx(j) * st_x_[lo|hi](i), and the q2-coupling depends only on j.
+  template <typename Metric>
+  static constexpr void precompute_coefficients_impl(Level& level, const BConds<Float>& bconds) {
     const Grid& grid    = level.grid;
-    const Index n       = grid.ny();
+    const Index nx      = grid.nx();
+    const Index ny      = grid.ny();
     const Float inv_dx2 = 1.0 / Igor::sqr(grid.dx());
-    const Float inv_dy  = 1.0 / grid.dy();
     const Float inv_dy2 = 1.0 / Igor::sqr(grid.dy());
 
-    level.tri_a.resize(static_cast<size_t>(n));
-    level.tri_cstar.resize(static_cast<size_t>(n));
-    level.tri_minv.resize(static_cast<size_t>(n));
+    // Evaluate the factors of the separable metric at an arbitrary reference point
+    const Float q1_ref = grid.xm(0);
+    const Float q2_ref = grid.ym(0);
 
-    level.tri_theta.resize(static_cast<size_t>(n));
-    level.tri_lo.resize(static_cast<size_t>(n));
-    level.tri_hi.resize(static_cast<size_t>(n));
+    level.vol_x.resize(static_cast<size_t>(nx));
+    level.st_x_lo.resize(static_cast<size_t>(nx));
+    level.st_x_hi.resize(static_cast<size_t>(nx));
 
-    // Account for periodic boundary conditions
+    level.vol_y.resize(static_cast<size_t>(ny));
+    level.st_gx.resize(static_cast<size_t>(ny));
+    level.st_y_lo.resize(static_cast<size_t>(ny));
+    level.st_y_hi.resize(static_cast<size_t>(ny));
+    level.st_diag.resize(static_cast<size_t>(ny));
+
+    level.tri_a.resize(static_cast<size_t>(ny));
+    level.tri_cstar.resize(static_cast<size_t>(ny));
+    level.tri_minv.resize(static_cast<size_t>(ny));
+
+    // H/h1^2 at x-face, H/h2^2 at y-face
+    const auto face_x = [](Float q1, Float q2) {
+      return Metric::H(q1, q2) / Igor::sqr(Metric::h1(q1, q2));
+    };
+    const auto face_y = [](Float q1, Float q2) {
+      return Metric::H(q1, q2) / Igor::sqr(Metric::h2(q1, q2));
+    };
+
+    // - q1-direction (x-direction) --------------------------------------------
+    for (Index i = 0; i < nx; ++i) {
+      const auto ii = static_cast<size_t>(i);
+      // Undo the q2-dependence which is moved into st_gx
+      const Float scale =
+          Igor::sqr(Metric::h1(grid.xm(i), q2_ref)) / Metric::H(grid.xm(i), q2_ref) * inv_dx2;
+      level.vol_x[ii]   = grid.dv(i, 0);
+      level.st_x_lo[ii] = face_x(grid.x(i), q2_ref) * scale;
+      level.st_x_hi[ii] = face_x(grid.x(i + 1), q2_ref) * scale;
+    }
+
+    // Sum of the q1-coefficients; independent of i for the supported metrics, e.g. for symmetric
+    // spherical coordinates sin(theta - dtheta/2) + sin(theta + dtheta/2) =
+    // 2 * cos(dtheta/2) * sin(theta). This allows a Thomas algorithm with coefficients only in j.
+    const Float sum_x = level.st_x_lo[0] + level.st_x_hi[0];
+    for (size_t ii = 0; ii < static_cast<size_t>(nx); ++ii) {
+      IGOR_ASSERT(std::abs(level.st_x_lo[ii] + level.st_x_hi[ii] - sum_x) <= 1e-8 * sum_x,
+                  "Diagonal of stencil depends on i: {} vs. {}",
+                  level.st_x_lo[ii] + level.st_x_hi[ii],
+                  sum_x);
+    }
+
+    // - q2-direction (y-direction) --------------------------------------------
+    // Account for Neumann boundary conditions
     const bool fold_lo = std::holds_alternative<Neumann>(bconds.bottom);
     const bool fold_hi = std::holds_alternative<Neumann>(bconds.top);
 
     Float cstar_prev   = 0.0;
-    for (Index j = 0; j < n; ++j) {
-      const Float r = grid.ym(j);
-      const Float a = inv_dy2 - 0.5 * inv_dy / r;  // Coefficient of lower diagonal
-      const Float c = inv_dy2 + 0.5 * inv_dy / r;  // Coefficient of upper diagonal
-      Float b       = -2.0 * inv_dy2 - 2.0 * inv_dx2 / Igor::sqr(r);  // Coefficient of diagonal
+    for (Index j = 0; j < ny; ++j) {
+      const auto jj     = static_cast<size_t>(j);
+      const Float H_c   = Metric::H(q1_ref, grid.ym(j));
+
+      level.vol_y[jj]   = grid.dv(0, j) / grid.dv(0, 0);
+      level.st_gx[jj]   = 1.0 / Igor::sqr(Metric::h1(q1_ref, grid.ym(j)));
+      level.st_y_lo[jj] = face_y(q1_ref, grid.y(j)) / H_c * inv_dy2;
+      level.st_y_hi[jj] = face_y(q1_ref, grid.y(j + 1)) / H_c * inv_dy2;
+      level.st_diag[jj] = -(level.st_y_lo[jj] + level.st_y_hi[jj]) - level.st_gx[jj] * sum_x;
+
+      // Tridiagonal system in r-direction; q1-neighbours are moved to the right-hand side
+      const Float a = level.st_y_lo[jj];  // Coefficient of lower diagonal
+      const Float c = level.st_y_hi[jj];  // Coefficient of upper diagonal
+      Float b       = level.st_diag[jj];  // Coefficient of diagonal
 
       if (j == 0) {
         if (fold_lo) {
@@ -101,7 +181,7 @@ class MultigridSolver {
           level.tri_bnd_lo = a;
         }
       }
-      if (j == n - 1) {
+      if (j == ny - 1) {
         if (fold_hi) {
           b += c;  // Adjustment for Neumann boundary condition
         } else {
@@ -112,33 +192,35 @@ class MultigridSolver {
       // The sub-diagonal is zero in first row
       const Float a_in = j == 0 ? 0.0 : a;
       // Pivot: b_j if j = 0, b_j - a_j*cstar_(j-1) otherwise
-      const Float m                           = b - a_in * cstar_prev;
+      const Float m       = b - a_in * cstar_prev;
 
-      level.tri_a[static_cast<size_t>(j)]     = a_in;
-      level.tri_minv[static_cast<size_t>(j)]  = 1.0 / m;
-      level.tri_cstar[static_cast<size_t>(j)] = c / m;
-      level.tri_theta[static_cast<size_t>(j)] = inv_dx2 / Igor::sqr(r);
-      level.tri_lo[static_cast<size_t>(j)]    = a;
-      level.tri_hi[static_cast<size_t>(j)]    = c;
-      cstar_prev                              = level.tri_cstar[static_cast<size_t>(j)];
+      level.tri_a[jj]     = a_in;
+      level.tri_minv[jj]  = 1.0 / m;
+      level.tri_cstar[jj] = c / m;
+      cstar_prev          = level.tri_cstar[jj];
     }
   }
 
   // -----------------------------------------------------------------------------------------------
-  constexpr void make_mean_free(const Grid& grid, Scalar s) const noexcept {
+  constexpr void make_mean_free(const Level& level, Scalar s) const noexcept {
     struct SumVol {
       Float sum, vol;
     };
-    const SumVol sv = grid.transform_reduce_i(
+    const Float* vol_x = level.vol_x.data();
+    const Float* vol_y = level.vol_y.data();
+    const SumVol sv    = level.grid.transform_reduce_i(
         SumVol{.sum = 0.0, .vol = 0.0},
-        FOREACH_FUNC { return SumVol{.sum = s(i, j) * grid.dv(i, j), .vol = grid.dv(i, j)}; },
+        FOREACH_FUNC {
+          const Float dv = vol_x[i] * vol_y[j];
+          return SumVol{.sum = s(i, j) * dv, .vol = dv};
+        },
         [](SumVol lhs, const SumVol& rhs) {
           lhs.sum += rhs.sum;
           lhs.vol += rhs.vol;
           return lhs;
         });
     const auto mean = sv.sum / sv.vol;
-    grid.foreach_i(FOREACH_FUNC { s(i, j) -= mean; });
+    level.grid.foreach_i(FOREACH_FUNC { s(i, j) -= mean; });
   }
 
   // -----------------------------------------------------------------------------------------------
@@ -160,20 +242,20 @@ class MultigridSolver {
         });
         break;
       case Coordinates::POLAR:
+      case Coordinates::SYMMETRIC_SPHERICAL:
         {
           // Get precomputed coefficients
-          const Float* theta = level.tri_theta.data();  // inv_dx2/sq(r)
-          const Float* c_lo  = level.tri_lo.data();     // inv_dy2 - 0.5*inv_dy/r
-          const Float* c_hi  = level.tri_hi.data();     // inv_dy2 + 0.5*inv_dy/r
+          const Float* x_lo = level.st_x_lo.data();
+          const Float* x_hi = level.st_x_hi.data();
+          const Float* gx   = level.st_gx.data();
+          const Float* y_lo = level.st_y_lo.data();
+          const Float* y_hi = level.st_y_hi.data();
+          const Float* diag = level.st_diag.data();
 
           level.grid.foreach_i(FOREACH_FUNC {
-            const Float c = sol(i, j);
-            const Float L =
-                // d^2(sol)/dr^2 + 1/r*d(sol)/dr
-                c_lo[j] * sol(i, j - 1) + c_hi[j] * sol(i, j + 1) + -2.0 * inv_dy2 * c +
-                // 1/r^2*d^2(sol)/d(theta)^2
-                theta[j] * (sol(i - 1, j) - 2.0 * c + sol(i + 1, j));
-            res(i, j) = rhs(i, j) - L;
+            const Float L = gx[j] * (x_lo[i] * sol(i - 1, j) + x_hi[i] * sol(i + 1, j)) +
+                            y_lo[j] * sol(i, j - 1) + y_hi[j] * sol(i, j + 1) + diag[j] * sol(i, j);
+            res(i, j)     = rhs(i, j) - L;
           });
         }
         break;
@@ -219,7 +301,8 @@ class MultigridSolver {
   }
 
   // -----------------------------------------------------------------------------------------------
-  constexpr void smooth_polar(const Level& level, Index num_iter) {
+  // Zebra line relaxation along r; for polar and symmetric spherical coordinates
+  constexpr void smooth_zebra(const Level& level, Index num_iter) {
     const auto sol     = level.sol;
     const auto rhs     = level.rhs;
     const Index nx     = level.grid.nx();
@@ -232,7 +315,9 @@ class MultigridSolver {
     const Float* tri_a = level.tri_a.data();
     const Float* cstar = level.tri_cstar.data();
     const Float* minv  = level.tri_minv.data();
-    const Float* theta = level.tri_theta.data();
+    const Float* x_lo  = level.st_x_lo.data();
+    const Float* x_hi  = level.st_x_hi.data();
+    const Float* gx    = level.st_gx.data();
     const Float bnd_lo = level.tri_bnd_lo;
     const Float bnd_hi = level.tri_bnd_hi;
 
@@ -251,13 +336,16 @@ class MultigridSolver {
           const Float* row_lo  = sol_row - sol_si;  // Left/previous row
           const Float* row_hi  = sol_row + sol_si;  // Right/next row
           const Float* rhs_row = rhs.at(i, 0);      // Current row of rhs
+          const Float c_lo     = x_lo[i];           // Coupling to left/previous row
+          const Float c_hi     = x_hi[i];           // Coupling to right/next row
 
           // - Thomas algorithm ----------------------------
           // NOLINTBEGIN
           Float prev = 0.0;
           for (Index j = 0; j < ny; ++j) {
             // RHS for tridiagonal system; theta-derivative (x-derivative) is pulled to the right
-            Float d = rhs_row[j * rhs_sj] - theta[j] * (row_lo[j * sol_sj] + row_hi[j * sol_sj]);
+            Float d = rhs_row[j * rhs_sj] -
+                      gx[j] * (c_lo * row_lo[j * sol_sj] + c_hi * row_hi[j * sol_sj]);
             // Periodic boundary conditions
             if (j == 0) { d -= bnd_lo * sol_row[-sol_sj]; }
             if (j == ny - 1) { d -= bnd_hi * sol_row[ny * sol_sj]; }
@@ -281,7 +369,8 @@ class MultigridSolver {
     // clang-format off
     switch (level.grid.coords()) {
       case Coordinates::CARTESIAN: return smooth_cartesian(level, num_iter);  // Red-black GS
-      case Coordinates::POLAR:     return smooth_polar(level, num_iter);      // Zebra-line Thomas
+      case Coordinates::POLAR:               return smooth_zebra(level, num_iter);  // Zebra-line Thomas
+      case Coordinates::SYMMETRIC_SPHERICAL: return smooth_zebra(level, num_iter);  // Zebra-line Thomas
     }
     // clang-format on
     Igor::Panic("Unreachable");
@@ -297,12 +386,15 @@ class MultigridSolver {
     const auto rhs = coarse.rhs;
 
     // Residual of `level` becomes the rhs of `coarse`. Volume weighted average.
-    const Float* w_lo = coarse.restrict_w_lo.data();
-    const Float* w_hi = coarse.restrict_w_hi.data();
+    const Float* wx_lo = coarse.restrict_wx_lo.data();
+    const Float* wx_hi = coarse.restrict_wx_hi.data();
+    const Float* wy_lo = coarse.restrict_wy_lo.data();
+    const Float* wy_hi = coarse.restrict_wy_hi.data();
 
     coarse.grid.foreach_i(FOREACH_FUNC {
-      rhs(i, j) = w_lo[j] * (res(2 * i, 2 * j) + res(2 * i + 1, 2 * j)) +
-                  w_hi[j] * (res(2 * i, 2 * j + 1) + res(2 * i + 1, 2 * j + 1));
+      rhs(i, j) =
+          wy_lo[j] * (wx_lo[i] * res(2 * i, 2 * j) + wx_hi[i] * res(2 * i + 1, 2 * j)) +
+          wy_hi[j] * (wx_lo[i] * res(2 * i, 2 * j + 1) + wx_hi[i] * res(2 * i + 1, 2 * j + 1));
     });
   }
 
@@ -390,7 +482,7 @@ class MultigridSolver {
                             level_grid.alloc_scalar(),
                             level_grid.alloc_scalar(),
                             level_grid.alloc_scalar());
-      precompute_tridiag(m_levels.back(), m_bconds);
+      precompute_coefficients(m_levels.back(), m_bconds);
       if (m_levels.size() > 1) {
         precompute_restriction_weights(m_levels[m_levels.size() - 2], m_levels.back());
       }
@@ -422,7 +514,7 @@ class MultigridSolver {
 
     copy(sol, fine.sol);
     copy(rhs, fine.rhs);
-    make_mean_free(fine.grid, fine.rhs);
+    make_mean_free(fine, fine.rhs);
 
     bool converged = false;
 
@@ -455,7 +547,7 @@ class MultigridSolver {
       res_before = m_res;
     }
 
-    make_mean_free(fine.grid, fine.sol);
+    make_mean_free(fine, fine.sol);
     copy(fine.sol, sol);
 
     return converged;
@@ -466,7 +558,7 @@ class MultigridSolver {
     for (size_t i = 0; i < m_levels.size(); ++i) {
       auto& level = m_levels[i];
       level.grid.move_grid_by_velocity(w, dt);
-      precompute_tridiag(level, m_bconds);
+      precompute_coefficients(level, m_bconds);
       if (i > 0) {
         const auto& fine = m_levels[i - 1];
         precompute_restriction_weights(fine, level);

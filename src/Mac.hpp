@@ -5,59 +5,7 @@
 #include "Grid.hpp"
 
 #include "MacOrthogonal.hpp"
-
-struct CartesianMetric {
-  // -----------------------------------------------
-  template <typename Float>
-  [[nodiscard]] static constexpr auto h1(Float /*q1*/, Float /*q2*/) -> Float {
-    return 1.0;
-  }
-
-  template <typename Float>
-  [[nodiscard]] static constexpr auto dh1_dq2(Float /*q1*/, Float /*q2*/) -> Float {
-    return 0.0;
-  }
-
-  // -----------------------------------------------
-  template <typename Float>
-  [[nodiscard]] static constexpr auto h2(Float /*q1*/, Float /*q2*/) -> Float {
-    return 1.0;
-  }
-
-  template <typename Float>
-  [[nodiscard]] static constexpr auto dh2_dq1(Float /*q1*/, Float /*q2*/) -> Float {
-    return 0.0;
-  }
-};
-
-struct PolarMetric {
-  // -----------------------------------------------
-  template <typename Float>
-  [[nodiscard]] static constexpr auto h1(Float /*q1*/, Float q2) -> Float {
-    return q2;
-  }
-
-  template <typename Float>
-  [[nodiscard]] static constexpr auto dh1_dq2(Float /*q1*/, Float /*q2*/) -> Float {
-    return 1.0;
-  }
-
-  // -----------------------------------------------
-  template <typename Float>
-  [[nodiscard]] static constexpr auto h2(Float /*q1*/, Float /*q2*/) -> Float {
-    return 1.0;
-  }
-
-  template <typename Float>
-  [[nodiscard]] static constexpr auto dh2_dq1(Float /*q1*/, Float /*q2*/) -> Float {
-    return 0.0;
-  }
-};
-
-// TODO: Metric for rotationally symmetric spherical coordinates.
-//       This likely requires to re-formulate the metrics we already have in terms of cell-volume
-//       metric cm and face-metrics fm1 and fm2.
-// struct SphericalMetric {};
+#include "Metrics.hpp"
 
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
@@ -66,8 +14,10 @@ constexpr void calc_div(const Grid<Float, LAYOUT>& grid,
                         Scalar<Float, LAYOUT> div) {
   switch (grid.coords()) {
     case Coordinates::CARTESIAN:
-      return OrthogonalCoordinates::calc_div<CartesianMetric>(grid, uf, div);
-    case Coordinates::POLAR: return OrthogonalCoordinates::calc_div<PolarMetric>(grid, uf, div);
+      return OrthogonalCoordinates::calc_div<Metric::Cartesian>(grid, uf, div);
+    case Coordinates::POLAR: return OrthogonalCoordinates::calc_div<Metric::Polar>(grid, uf, div);
+    case Coordinates::SYMMETRIC_SPHERICAL:
+      return OrthogonalCoordinates::calc_div<Metric::SymmetricSpherical>(grid, uf, div);
   }
   Igor::Panic("Unreachable");
 }
@@ -85,11 +35,35 @@ constexpr void calc_mom_flux(const Grid<Float, LAYOUT>& grid,
                              Scalar<Float, LAYOUT> FVY) {
   switch (grid.coords()) {
     case Coordinates::CARTESIAN:
-      return OrthogonalCoordinates::calc_mom_flux<CartesianMetric>(
+      return OrthogonalCoordinates::calc_mom_flux<Metric::Cartesian>(
           grid, u, p, rho, mu, FUX, FUY, FVX, FVY);
     case Coordinates::POLAR:
-      return OrthogonalCoordinates::calc_mom_flux<PolarMetric>(
+      return OrthogonalCoordinates::calc_mom_flux<Metric::Polar>(
           grid, u, p, rho, mu, FUX, FUY, FVX, FVY);
+    case Coordinates::SYMMETRIC_SPHERICAL:
+      Igor::Panic("Use `FWZ` for symmetric spherical coordinates.");
+  }
+  Igor::Panic("Unreachable");
+}
+
+// =================================================================================================
+template <typename Float, Layout LAYOUT>
+constexpr void calc_mom_flux(const Grid<Float, LAYOUT>& grid,
+                             const FaceVector<Float, LAYOUT> u,
+                             const Scalar<Float, LAYOUT> p,
+                             Float rho,
+                             Float mu,
+                             Scalar<Float, LAYOUT> FUX,
+                             VertexScalar<Float, LAYOUT> FUY,
+                             VertexScalar<Float, LAYOUT> FVX,
+                             Scalar<Float, LAYOUT> FVY,
+                             Scalar<Float, LAYOUT> FWZ) {
+  switch (grid.coords()) {
+    case Coordinates::CARTESIAN: Igor::Panic("Do not use `FWZ` for Cartesian coordinates.");
+    case Coordinates::POLAR:     Igor::Panic("Do not use `FWZ` for polar coordinates.");
+    case Coordinates::SYMMETRIC_SPHERICAL:
+      return OrthogonalCoordinates::calc_mom_flux<Metric::SymmetricSpherical>(
+          grid, u, p, rho, mu, FUX, FUY, FVX, FVY, FWZ);
   }
   Igor::Panic("Unreachable");
 }
@@ -106,10 +80,33 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
                         FaceVector<Float, LAYOUT> u) {
   switch (grid.coords()) {
     case Coordinates::CARTESIAN:
-      return OrthogonalCoordinates::update_u<CartesianMetric>(
+      return OrthogonalCoordinates::update_u<Metric::Cartesian>(
           grid, dt, FUX, FUY, FVX, FVY, u_old, u);
     case Coordinates::POLAR:
-      return OrthogonalCoordinates::update_u<PolarMetric>(grid, dt, FUX, FUY, FVX, FVY, u_old, u);
+      return OrthogonalCoordinates::update_u<Metric::Polar>(grid, dt, FUX, FUY, FVX, FVY, u_old, u);
+    case Coordinates::SYMMETRIC_SPHERICAL:
+      Igor::Panic("Use `FWZ` for symmetric spherical coordinates.");
+  }
+  Igor::Panic("Unreachable");
+}
+
+// =================================================================================================
+template <typename Float, Layout LAYOUT>
+constexpr void update_u(const Grid<Float, LAYOUT>& grid,
+                        Float dt,
+                        const Scalar<Float, LAYOUT> FUX,
+                        const VertexScalar<Float, LAYOUT> FUY,
+                        const VertexScalar<Float, LAYOUT> FVX,
+                        const Scalar<Float, LAYOUT> FVY,
+                        const Scalar<Float, LAYOUT> FWZ,
+                        const FaceVector<Float, LAYOUT> u_old,
+                        FaceVector<Float, LAYOUT> u) {
+  switch (grid.coords()) {
+    case Coordinates::CARTESIAN: Igor::Panic("Do not use `FWZ` for Cartesian coordinates.");
+    case Coordinates::POLAR:     Igor::Panic("Do not use `FWZ` for polar coordinates.");
+    case Coordinates::SYMMETRIC_SPHERICAL:
+      return OrthogonalCoordinates::update_u<Metric::SymmetricSpherical>(
+          grid, dt, FUX, FUY, FVX, FVY, FWZ, u_old, u);
   }
   Igor::Panic("Unreachable");
 }
@@ -124,9 +121,12 @@ constexpr void correct_velocity(const Grid<Float, LAYOUT>& grid,
                                 Scalar<Float, LAYOUT> p) {
   switch (grid.coords()) {
     case Coordinates::CARTESIAN:
-      return OrthogonalCoordinates::correct_velocity<CartesianMetric>(grid, dp, rho, dt, u, p);
+      return OrthogonalCoordinates::correct_velocity<Metric::Cartesian>(grid, dp, rho, dt, u, p);
     case Coordinates::POLAR:
-      return OrthogonalCoordinates::correct_velocity<PolarMetric>(grid, dp, rho, dt, u, p);
+      return OrthogonalCoordinates::correct_velocity<Metric::Polar>(grid, dp, rho, dt, u, p);
+    case Coordinates::SYMMETRIC_SPHERICAL:
+      return OrthogonalCoordinates::correct_velocity<Metric::SymmetricSpherical>(
+          grid, dp, rho, dt, u, p);
   }
   Igor::Panic("Unreachable");
 }
@@ -148,7 +148,7 @@ constexpr auto adjust_dt(const Grid<Float, LAYOUT>& grid,
       [](Float lhs, Float rhs) { return std::max(lhs, rhs); });
 
   // Correction for polar coordinates
-  const auto hx = grid.coords() == Coordinates::POLAR ? grid.ym(0) * grid.dx() : grid.dx();
+  const auto hx = grid.coords() == Coordinates::CARTESIAN ? grid.dx() : grid.ym(0) * grid.dx();
   const auto hy = grid.dy();
 
   // Advection: dt * (|u|/hx + |v|/hy) <= CFL
