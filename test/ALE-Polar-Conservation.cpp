@@ -48,38 +48,6 @@ constexpr auto ale_adjust_dt(const Grid<Float, LAYOUT>& grid,
   return adv > 0.0 ? CFL_ / adv : no_limit;
 }
 
-template <typename Float, Layout LAYOUT>
-constexpr void ale_calc_J_flux(const Grid<Float, LAYOUT>& grid, FaceVector<Float, LAYOUT> F) {
-  grid.template foreach_face_i<Dimension::X>(FOREACH_FUNC { F.x(i, j) = w.x; });
-  grid.template foreach_face_i<Dimension::Y>(FOREACH_FUNC { F.y(i, j) = w.y; });
-}
-
-template <typename Float, Layout LAYOUT>
-constexpr void ale_update_J(const Grid<Float, LAYOUT>& grid,
-                            Float dt,
-                            const FaceVector<Float, LAYOUT> F,
-                            const Scalar<Float, LAYOUT> J_old,
-                            Scalar<Float, LAYOUT> J) {
-  switch (grid.coords()) {
-    case Coordinates::CARTESIAN:
-      grid.foreach_i(FOREACH_FUNC {
-        J(i, j) = J_old(i, j) + dt * J_old(i, j) *
-                                    ((F.right(i, j) - F.left(i, j)) / grid.dx() +
-                                     (F.top(i, j) - F.bottom(i, j)) / grid.dy());
-      });
-      return;
-    case Coordinates::POLAR:
-      grid.foreach_i(FOREACH_FUNC {
-        const auto dFthdth = (F.right(i, j) - F.left(i, j)) / grid.dx();
-        const auto dFrdr   = (F.top(i, j) - F.bottom(i, j)) / grid.dy();
-        const auto Fr      = (F.top(i, j) + F.bottom(i, j)) / 2.0;
-        const auto r       = grid.ym(j);
-        J(i, j)            = J_old(i, j) + dt * J_old(i, j) * (dFrdr + dFthdth / r + Fr / r);
-      });
-      return;
-    case Coordinates::SYMMETRIC_SPHERICAL: Igor::Todo();
-  }
-}
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
 void correct_outflow(const Grid<Float, LAYOUT>& grid, FaceVector<Float, LAYOUT> u) {
@@ -111,40 +79,29 @@ auto main(int argc, char** argv) -> int {
     return 1;
   }
 
-  const auto output_dir = get_output_directory();
+  const auto output_dir = "test/output/ALE-Polar-Conservation-" + std::to_string(N);
   if (!init_output_directory(output_dir)) { return 1; }
 
   Grid<Float> grid(theta_min, theta_max, N, r_min, r_max, N, 3, Coordinates::POLAR);
-  auto u_old  = grid.alloc_face_vector();
-  auto u      = grid.alloc_face_vector();
-  auto ui     = grid.alloc_vector();
+  auto u_old = grid.alloc_face_vector();
+  auto u     = grid.alloc_face_vector();
+  auto ui    = grid.alloc_vector();
 
-  auto FUX    = grid.alloc_scalar();
-  auto FUY    = grid.alloc_vertex_scalar();
-  auto FVX    = grid.alloc_vertex_scalar();
-  auto FVY    = grid.alloc_scalar();
+  auto FUX   = grid.alloc_scalar();
+  auto FUY   = grid.alloc_vertex_scalar();
+  auto FVX   = grid.alloc_vertex_scalar();
+  auto FVY   = grid.alloc_scalar();
 
-  auto div    = grid.alloc_scalar();
-  auto p      = grid.alloc_scalar();
-  auto dp     = grid.alloc_scalar();
+  auto div   = grid.alloc_scalar();
+  auto p     = grid.alloc_scalar();
+  auto dp    = grid.alloc_scalar();
 
-  auto s_old  = grid.alloc_scalar();
-  auto s      = grid.alloc_scalar();
-  auto Fs     = grid.alloc_face_vector();
+  auto s_old = grid.alloc_scalar();
+  auto s     = grid.alloc_scalar();
+  auto Fs    = grid.alloc_face_vector();
 
-  auto J_old  = grid.alloc_scalar();
-  auto J      = grid.alloc_scalar();
-  auto FJ     = grid.alloc_face_vector();
-
-  auto J_real = grid.alloc_scalar();
-  auto r0     = grid.alloc_scalar();
-
-  Float t     = 0.0;
-  Float dt    = 1e-1;
-
-  fill(J, 1.0);
-  grid.foreach_i(FOREACH_FUNC { r0(i, j) = grid.r(j); });
-  grid.foreach_i(FOREACH_FUNC { J_real(i, j) = grid.r(j) / r0(i, j); });
+  Float t    = 0.0;
+  Float dt   = 1e-1;
 
   const BConds<Float> uth_bconds{
       .left   = Periodic{},
@@ -186,8 +143,6 @@ auto main(int argc, char** argv) -> int {
   writer.add_field("p", p);
   writer.add_field("div", div);
   writer.add_field("s", s);
-  writer.add_field("J", J);
-  writer.add_field("J_real", J_real);
   if (!writer.write(t)) { return 1; }
 
   Stats p_stats      = stats(grid, p);
@@ -195,7 +150,6 @@ auto main(int argc, char** argv) -> int {
   Stats v_stats      = stats(grid, u.y);
   Stats div_stats    = stats(grid, div);
   Stats s_stats      = stats(grid, s);
-  Stats J_stats      = stats(grid, J);
   Float div_max      = std::max(std::abs(div_stats.min), std::abs(div_stats.max));
 
   const Float s0_sum = s_stats.sum;
@@ -212,16 +166,15 @@ auto main(int argc, char** argv) -> int {
   monitor.add_variable(&s_stats.min, "min(s)");
   monitor.add_variable(&s_stats.max, "max(s)");
   monitor.add_variable(&s_stats.sum, "sum(s)");
-  monitor.add_variable(&J_stats.min, "min(J)");
-  monitor.add_variable(&J_stats.max, "max(J)");
   monitor.add_variable(&div_max, "absmax(div)");
   monitor.add_variable(&mg_res, "res(MG)");
   monitor.add_variable(&mg_cycles, "cycles(MG)");
   monitor.write();
   // - Output ------------------------------------------------------------------
 
-  IGOR_TIME_SCOPE("Solver")
-  while (t < tend) {
+  bool any_failed = false;
+  IGOR_TIME_SCOPE("ALE-Polar-Conservation-" + std::to_string(N))
+  while (t < tend && !any_failed) {
     dt = std::min({
         adjust_dt(grid, u, rho, mu, CFL),
         advection_adjust_dt(grid, D, CFL),
@@ -232,29 +185,23 @@ auto main(int argc, char** argv) -> int {
 
     copy(u, u_old);
     copy(s, s_old);
-    copy(J, J_old);
 
     mg_cycles = 0;
     for (Index sub_iter = 0; sub_iter < 2; ++sub_iter) {
       const auto local_dt = sub_iter == 0 ? 0.5 * dt : dt;
 
-      // 1) Update J
-      ale_calc_J_flux(grid, FJ);
-      ale_update_J(grid, local_dt, FJ, J_old, J);
-      apply_bconds(grid, dp_bconds, J, t);
-
-      // 2) Prediction
+      // 1) Prediction
       calc_mom_flux(grid, u, p, rho, mu, w, FUX, FUY, FVX, FVY);
       calc_advection_flux(grid, u, s, w, D, Fs);
       update_u(grid, local_dt, w, FUX, FUY, FVX, FVY, u_old, u);
       apply_velocity_bconds(grid, uth_bconds, ur_bconds, u);
 
-      // 3) Update the physical position of the grid
+      // 2) Update the physical position of the grid
       grid.move_grid_by_velocity(w, 0.5 * dt);
       solver.move_grid_by_velocity(w, 0.5 * dt);
       correct_outflow(grid, u);
 
-      // 4) Pressure calculation
+      // 3) Pressure calculation
       calc_div(grid, u, div);
       grid.foreach_i(FOREACH_FUNC { div(i, j) *= rho / local_dt; });
       if (!solver.solve(dp, div, 1e-6 / local_dt)) {
@@ -262,29 +209,28 @@ auto main(int argc, char** argv) -> int {
                    t,
                    solver.num_cycles(),
                    solver.res());
+        any_failed = true;
       }
       mg_res     = solver.res();
       mg_cycles += solver.num_cycles();
       apply_bconds(grid, dp_bconds, dp, t);
 
-      // 5) Projection
+      // 4) Projection
       correct_velocity(grid, dp, rho, local_dt, u, p);
       apply_velocity_bconds_only_periodic(grid, uth_bconds, ur_bconds, u);
 
-      // 6) Update scalar
+      // 5) Update scalar
       update_s(grid, local_dt, w, Fs, s_old, s);
       apply_bconds(grid, s_bconds, s, t);
     }
     calc_div(grid, u, div);
     interpolate(grid, u, ui);
-    grid.foreach_i(FOREACH_FUNC { J_real(i, j) = grid.r(j) / r0(i, j); });
 
     p_stats    = stats(grid, p);
     u_stats    = stats(grid, u.x);
     v_stats    = stats(grid, u.y);
     div_stats  = stats(grid, div);
     s_stats    = stats(grid, s);
-    J_stats    = stats(grid, J);
     div_max    = std::max(std::abs(div_stats.min), std::abs(div_stats.max));
 
     t         += dt;
@@ -295,9 +241,25 @@ auto main(int argc, char** argv) -> int {
     }
   }
 
+  const auto abserr_conservation = std::abs(s_stats.sum - s0_sum);
   Igor::Info("sum(s0) = {:.12e}", s0_sum);
   Igor::Info("sum(s)  = {:.12e}", s_stats.sum);
-  Igor::Info("abs. conservation error = {:.12e}", std::abs(s_stats.sum - s0_sum));
+  Igor::Info("abs. conservation error = {:.12e}", abserr_conservation);
 
-  Igor::Info("Ok.");
+  const auto tol = [=] {
+    if (N <= 16) {
+      return 1e-8;
+    } else if (N <= 32) {
+      return 1e-11;
+    }
+    return 1e-12;
+  }();
+  if (abserr_conservation > tol) {
+    Igor::Error("Did not conserve scalar `s`, abs. error of conservation is {:.16}, expected <{}",
+                abserr_conservation,
+                tol);
+    any_failed = true;
+  }
+
+  return any_failed ? 1 : 0;
 }

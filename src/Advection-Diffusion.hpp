@@ -6,60 +6,9 @@
 #include "Metrics.hpp"
 #include "WENO5.hpp"
 
-// =================================================================================================
-// = ALE-Polar =====================================================================================
-// =================================================================================================
-namespace ALEPolar {
-
-template <typename Float, Layout LAYOUT>
-constexpr void calc_advection_flux(const Grid<Float, LAYOUT>& grid,
-                                   const FaceVector<Float, LAYOUT> u,
-                                   const Scalar<Float, LAYOUT> s,
-                                   const Vec2<Float>& w,
-                                   Float D,
-                                   FaceVector<Float, LAYOUT> F) {
-  static auto sL = grid.alloc_face_vector();
-  static auto sR = grid.alloc_face_vector();
-  weno_reconstruction(grid, s, sL, sR);
-
-  grid.template foreach_face_i<Dimension::X>(FOREACH_FUNC {
-    const auto si   = (u.x(i, j) - w.x) >= 0.0 ? sL.x(i, j) : sR.x(i, j);
-    const auto dsdx = (s(i, j) - s(i - 1, j)) / grid.dx();
-    const auto r    = grid.ym(j);
-    F.x(i, j)       = -si * (u.x(i, j) - w.x) + D * dsdx / r;
-  });
-
-  grid.template foreach_face_i<Dimension::Y>(FOREACH_FUNC {
-    const auto si   = (u.y(i, j) - w.y) >= 0.0 ? sL.y(i, j) : sR.y(i, j);
-    const auto dsdy = (s(i, j) - s(i, j - 1)) / grid.dy();
-    F.y(i, j)       = -si * (u.y(i, j) - w.y) + D * dsdy;
-  });
-}
-
-template <typename Float, Layout LAYOUT>
-constexpr void update_s(const Grid<Float, LAYOUT>& grid,
-                        Float dt,
-                        const Vec2<Float>& w,
-                        const FaceVector<Float, LAYOUT> F,
-                        const Scalar<Float, LAYOUT> s_old,
-                        Scalar<Float, LAYOUT> s) {
-  grid.foreach_i(FOREACH_FUNC {
-    const auto dFthdth = (F.right(i, j) - F.left(i, j)) / grid.dx();
-    const auto dFrdr   = (F.top(i, j) - F.bottom(i, j)) / grid.dy();
-    const auto Fr      = (F.top(i, j) + F.bottom(i, j)) / 2.0;
-    const auto r       = grid.ym(j);
-    const auto r_old   = r - dt * w.r();
-    s(i, j)            = (r_old * s_old(i, j) + r * dt * (dFrdr + dFthdth / r + Fr / r)) / r;
-  });
-}
-
-}  // namespace ALEPolar
-// =================================================================================================
-// = ALE-Polar =====================================================================================
-// =================================================================================================
-
 namespace Orthogonal {
 
+// =================================================================================================
 template <typename Metric, typename Float, Layout LAYOUT>
 constexpr void calc_advection_flux(const Grid<Float, LAYOUT>& grid,
                                    const FaceVector<Float, LAYOUT> u,
@@ -83,6 +32,32 @@ constexpr void calc_advection_flux(const Grid<Float, LAYOUT>& grid,
   });
 }
 
+// =================================================================================================
+template <typename Metric, typename Float, Layout LAYOUT>
+constexpr void calc_advection_flux(const Grid<Float, LAYOUT>& grid,
+                                   const FaceVector<Float, LAYOUT> u,
+                                   const Scalar<Float, LAYOUT> s,
+                                   const FaceVector<Float, LAYOUT> sL,
+                                   const FaceVector<Float, LAYOUT> sR,
+                                   const Vec2<Float>& w,
+                                   Float D,
+                                   FaceVector<Float, LAYOUT> F) {
+  grid.template foreach_face_i<Dimension::X>(FOREACH_FUNC {
+    const auto si     = (u.x(i, j) - w.x) >= 0.0 ? sL.x(i, j) : sR.x(i, j);
+    const auto dsdx   = (s(i, j) - s(i - 1, j)) / grid.dx();
+    const auto inv_h1 = 1.0 / Metric::h1(grid.x(i), grid.ym(j));
+    F.x(i, j)         = -si * (u.x(i, j) - w.x) + D * inv_h1 * dsdx;
+  });
+
+  grid.template foreach_face_i<Dimension::Y>(FOREACH_FUNC {
+    const auto si     = (u.y(i, j) - w.y) >= 0.0 ? sL.y(i, j) : sR.y(i, j);
+    const auto dsdy   = (s(i, j) - s(i, j - 1)) / grid.dy();
+    const auto inv_h2 = 1.0 / Metric::h2(grid.xm(i), grid.y(j));
+    F.y(i, j)         = -si * (u.y(i, j) - w.y) + D * inv_h2 * dsdy;
+  });
+}
+
+// =================================================================================================
 template <typename Metric, typename Float, Layout LAYOUT>
 constexpr void update_s(const Grid<Float, LAYOUT>& grid,
                         Float dt,
@@ -110,6 +85,45 @@ constexpr void update_s(const Grid<Float, LAYOUT>& grid,
   });
 }
 
+// =================================================================================================
+template <typename Metric, typename Float, Layout LAYOUT>
+constexpr void update_s(const Grid<Float, LAYOUT>& grid,
+                        Float dt,
+                        const Vec2<Float>& w,
+                        const FaceVector<Float, LAYOUT> F,
+                        const Scalar<Float, LAYOUT> s_old,
+                        Scalar<Float, LAYOUT> s) {
+  grid.foreach_i(FOREACH_FUNC {
+    const auto dFthdth  = (F.right(i, j) - F.left(i, j)) / grid.dx();
+    const auto dFrdr    = (F.top(i, j) - F.bottom(i, j)) / grid.dy();
+    const auto Fr       = (F.top(i, j) + F.bottom(i, j)) / 2.0;
+    const auto r        = grid.ym(j);
+    const auto r_old    = r - dt * w.r();
+    s(i, j)             = (r_old * s_old(i, j) + r * dt * (dFrdr + dFthdth / r + Fr / r)) / r;
+
+    const auto H_right  = Metric::H(grid.x(i + 1), grid.ym(j));
+    const auto h1_right = Metric::h1(grid.x(i + 1), grid.ym(j));
+    const auto H_left   = Metric::H(grid.x(i), grid.ym(j));
+    const auto h1_left  = Metric::h1(grid.x(i), grid.ym(j));
+    const auto dFdq1 =
+        (H_right / h1_right * F.right(i, j) - H_left / h1_left * F.left(i, j)) / grid.dx();
+
+    const auto H_top     = Metric::H(grid.xm(i), grid.y(j + 1));
+    const auto h2_top    = Metric::h2(grid.xm(i), grid.y(j + 1));
+    const auto H_bottom  = Metric::H(grid.xm(i), grid.y(j));
+    const auto h2_bottom = Metric::h2(grid.xm(i), grid.y(j));
+    const auto dFdq2 =
+        (H_top / h2_top * F.top(i, j) - H_bottom / h2_bottom * F.bottom(i, j)) / grid.dy();
+
+    const auto inv_H = 1.0 / Metric::H(grid.xm(i), grid.ym(j));
+
+    const auto H_old = Metric::H(grid.xm(i) - dt * w.x, grid.ym(j) - dt * w.y);
+
+    s(i, j)          = (H_old * s_old(i, j) + dt * (dFdq1 + dFdq2)) * inv_H;
+  });
+}
+
+// =================================================================================================
 template <typename Metric, typename Float, Layout LAYOUT>
 constexpr void update_s(const Grid<Float, LAYOUT>& grid,
                         Float dt,
@@ -132,16 +146,15 @@ constexpr void update_s(const Grid<Float, LAYOUT>& grid,
     const auto dFdq2 =
         (H_top / h2_top * F.top(i, j) - H_bottom / h2_bottom * F.bottom(i, j)) / grid.dy();
 
-    const auto inv_H = 1.0 / Metric::H(grid.xm(i), grid.ym(j));
+    const auto H = Metric::H(grid.xm(i), grid.ym(j));
 
-    // TODO: Is the source term correct for general orthogonal coordinates, the cells do not have
-    //       the same size after all.
-    s(i, j) = s_old(i, j) + dt * (inv_H * (dFdq1 + dFdq2) + src(i, j));
+    s(i, j)      = s_old(i, j) + dt * ((dFdq1 + dFdq2) / H + H * src(i, j));
   });
 }
 
 }  // namespace Orthogonal
 
+// =================================================================================================
 template <typename Float, Layout LAYOUT>
 constexpr auto advection_adjust_dt(const Grid<Float, LAYOUT>& grid, Float D, Float CFL) -> Float {
   IGOR_ASSERT(D >= 0.0, "Diffusion coefficient cannot be negative but is {}", D);
@@ -149,6 +162,7 @@ constexpr auto advection_adjust_dt(const Grid<Float, LAYOUT>& grid, Float D, Flo
   return D > 0.0 ? CFL * 0.25 * Igor::sqr(h) / D : std::numeric_limits<Float>::max();
 }
 
+// =================================================================================================
 template <typename Float, Layout LAYOUT>
 constexpr void calc_advection_flux(const Grid<Float, LAYOUT>& grid,
                                    const FaceVector<Float, LAYOUT> u,
@@ -170,6 +184,31 @@ constexpr void calc_advection_flux(const Grid<Float, LAYOUT>& grid,
   Igor::Panic("Unreachable");
 }
 
+// =================================================================================================
+template <typename Float, Layout LAYOUT>
+constexpr void calc_advection_flux(const Grid<Float, LAYOUT>& grid,
+                                   const FaceVector<Float, LAYOUT> u,
+                                   const Scalar<Float, LAYOUT> s,
+                                   const Vec2<Float>& w,
+                                   Float D,
+                                   FaceVector<Float, LAYOUT> F) {
+  static auto sL = grid.alloc_face_vector();
+  static auto sR = grid.alloc_face_vector();
+  weno_reconstruction(grid, s, sL, sR);
+
+  switch (grid.coords()) {
+    case Coordinates::CARTESIAN:
+      return Orthogonal::calc_advection_flux<Metric::Cartesian>(grid, u, s, sL, sR, w, D, F);
+    case Coordinates::POLAR:
+      return Orthogonal::calc_advection_flux<Metric::Polar>(grid, u, s, sL, sR, w, D, F);
+    case Coordinates::SYMMETRIC_SPHERICAL:
+      return Orthogonal::calc_advection_flux<Metric::SymmetricSpherical>(
+          grid, u, s, sL, sR, w, D, F);
+  }
+  Igor::Panic("Unreachable");
+}
+
+// =================================================================================================
 template <typename Float, Layout LAYOUT>
 constexpr void update_s(const Grid<Float, LAYOUT>& grid,
                         Float dt,
@@ -186,6 +225,25 @@ constexpr void update_s(const Grid<Float, LAYOUT>& grid,
   Igor::Panic("Unreachable");
 }
 
+// =================================================================================================
+template <typename Float, Layout LAYOUT>
+constexpr void update_s(const Grid<Float, LAYOUT>& grid,
+                        Float dt,
+                        const Vec2<Float>& w,
+                        const FaceVector<Float, LAYOUT> F,
+                        const Scalar<Float, LAYOUT> s_old,
+                        Scalar<Float, LAYOUT> s) {
+  switch (grid.coords()) {
+    case Coordinates::CARTESIAN:
+      return Orthogonal::update_s<Metric::Cartesian>(grid, dt, w, F, s_old, s);
+    case Coordinates::POLAR: return Orthogonal::update_s<Metric::Polar>(grid, dt, w, F, s_old, s);
+    case Coordinates::SYMMETRIC_SPHERICAL:
+      return Orthogonal::update_s<Metric::SymmetricSpherical>(grid, dt, w, F, s_old, s);
+  }
+  Igor::Panic("Unreachable");
+}
+
+// =================================================================================================
 template <typename Float, Layout LAYOUT>
 constexpr void update_s(const Grid<Float, LAYOUT>& grid,
                         Float dt,

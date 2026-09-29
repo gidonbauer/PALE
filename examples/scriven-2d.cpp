@@ -11,7 +11,6 @@
 #include "HDFWriter.hpp"
 #include "IO.hpp"
 #include "Mac.hpp"
-#include "MacPolar.hpp"
 #include "Monitor.hpp"
 #include "MultigridPoisson.hpp"
 
@@ -323,9 +322,9 @@ auto main(int argc, char** argv) -> int {
       if (sub_iter == 0) { w0 = w; }
 
       // 2) Prediction
-      ALEPolar::calc_mom_flux(grid, u, p, rhol, mul, w, FUX, FUY, FVX, FVY);
-      ALEPolar::calc_advection_flux(grid, u, T, w, alphal, FT);
-      ALEPolar::update_u(grid, local_dt, w, FUX, FUY, FVX, FVY, u_old, u);
+      calc_mom_flux(grid, u, p, rhol, mul, w, FUX, FUY, FVX, FVY);
+      calc_advection_flux(grid, u, T, w, alphal, FT);
+      update_u(grid, local_dt, w, FUX, FUY, FVX, FVY, u_old, u);
       apply_velocity_bconds(grid, uth_bconds, ur_bconds, u);
 
       // 3) Update the physical position of the grid
@@ -334,7 +333,7 @@ auto main(int argc, char** argv) -> int {
       correct_outflow(grid, u);
 
       // 4) Pressure calculation
-      ALEPolar::calc_div(grid, u, div);
+      calc_div(grid, u, div);
       grid.foreach_i(FOREACH_FUNC { div(i, j) *= rhol / local_dt; });
       if (!solver.solve(dp, div, 1e-3 / local_dt)) {
         Igor::Warn("t={:.8f}: Multigrid solver did not converge after {} cycles: res = {:.8e}",
@@ -347,14 +346,14 @@ auto main(int argc, char** argv) -> int {
       apply_bconds(grid, dp_bconds, dp, t);
 
       // 5) Projection
-      ALEPolar::correct_velocity(grid, dp, rhol, local_dt, u, p);
+      correct_velocity(grid, dp, rhol, local_dt, u, p);
       apply_velocity_bconds_only_periodic(grid, uth_bconds, ur_bconds, u);
 
       // 6) Update temperature
-      ALEPolar::update_s(grid, local_dt, sub_iter == 0 ? w : (w0 + w) / 2.0, FT, T_old, T);
+      update_s(grid, local_dt, sub_iter == 0 ? w : (w0 + w) / 2.0, FT, T_old, T);
       apply_bconds(grid, s_bconds, T, t);
     }
-    ALEPolar::calc_div(grid, u, div);
+    calc_div(grid, u, div);
     interpolate(grid, u, ui);
 
     p_stats       = stats(grid, p);

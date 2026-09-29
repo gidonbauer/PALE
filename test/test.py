@@ -38,19 +38,21 @@ class TestCase:
     parallel: bool
 
 ALL_TESTS = [
-    TestCase("Taylor-Green-MG",     [8, 16, 64],                False),
-    TestCase("Taylor-Green-FFT",    [8, 16, 64],                False),
-    TestCase("Channel-MG",          [16, 32, 64],               False),
-    TestCase("Channel-FFT",         [16, 32, 64],               False),
-    TestCase("Polar-Couette",       [8, 16, 32],                False),
-    TestCase("Polar-Channel",       [8, 16, 32, 64],            False),
-    TestCase("Advection-Cartesian", [16, 32, 64, 128],          False),
-    TestCase("Advection-Polar",     [16, 32, 64, 128],          False),
-    TestCase("Multigrid",           [32, 64, 128, 512, 1024],   False),
-    TestCase("Multigrid-Spherical", [16, 32, 64, 128, 256],     False),
-    TestCase("Hill-Vortex",         [16, 32, 64],               False),
-    TestCase("Iterator",            None,                       True),
-    TestCase("Boundary",            None,                       False),
+    TestCase("Taylor-Green-MG",             [8, 16, 64],                False),
+    TestCase("Taylor-Green-FFT",            [8, 16, 64],                False),
+    TestCase("Channel-MG",                  [16, 32, 64],               False),
+    TestCase("Channel-FFT",                 [16, 32, 64],               False),
+    TestCase("Polar-Couette",               [8, 16, 32],                False),
+    TestCase("Polar-Channel",               [8, 16, 32, 64],            False),
+    TestCase("Advection-Cartesian",         [16, 32, 64, 128],          False),
+    TestCase("Advection-Polar",             [16, 32, 64, 128],          False),
+    TestCase("Multigrid",                   [32, 64, 128, 512, 1024],   False),
+    TestCase("Multigrid-Spherical",         [16, 32, 64, 128, 256],     False),
+    TestCase("Hill-Vortex",                 [16, 32, 64],               False),
+    TestCase("ALE-Polar-Conservation",      [16, 32, 64, 128],          False),
+    TestCase("ALE-Spherical-Conservation",  [16, 32, 64, 128],          False),
+    TestCase("Iterator",                    None,                       True),
+    TestCase("Boundary",                    None,                       False),
 ]
 
 
