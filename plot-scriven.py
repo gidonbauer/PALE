@@ -3,6 +3,7 @@ from matplotlib import pyplot as plt
 import pandas as pd
 from scipy.integrate import simpson
 import sys
+import os
 from argparse import ArgumentParser
 import json
 
@@ -107,13 +108,19 @@ def plot_errors(df):
 
 def main():
     parser = ArgumentParser()
-    parser.add_argument("monitor_file", type=str, help="Monitor file of the simulation.")
-    parser.add_argument("setup_file", type=str, help="Setup file of the simulation in JSON format.")
+    parser.add_argument("directory", type=str, help="Directory containing the simulation results.")
     args = parser.parse_args()
 
-    df = read_monitor_file(args.monitor_file)
+    main_monitor_file = f"{args.directory}/monitor.log"
+    error_monitor_file = f"{args.directory}/error.log"
+    setup_file = f"{args.directory}/setup.json"
+    if os.path.isfile(error_monitor_file):
+        df = pd.concat([read_monitor_file(main_monitor_file),
+                        read_monitor_file(error_monitor_file)], axis=1)
+    else:
+        df = read_monitor_file(main_monitor_file)
     try:
-        with open(args.setup_file, "r") as f:
+        with open(setup_file, "r") as f:
             s = json.load(f)
     except IOError as err:
         print(err, file=sys.stderr)

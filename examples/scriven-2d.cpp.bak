@@ -17,14 +17,6 @@
 
 #include "Scriven-Analytical.hpp"
 
-#ifndef DIMENSION
-#define DIMENSION 2
-#endif  // DIMENSION
-
-#if DIMENSION != 2 && DIMENSION != 3
-#error "DIMENSION must be 2 or 3"
-#endif
-
 using Float               = double;
 
 constexpr Float pi        = std::numbers::pi_v<Float>;
@@ -80,11 +72,7 @@ constexpr auto ale_adjust_dt(const Grid<Float, LAYOUT>& grid,
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
 void correct_outflow(const Grid<Float, LAYOUT>& grid, FaceVector<Float, LAYOUT> u) {
-#if DIMENSION == 2
-  using Metric = Metric::Polar;
-#else
-  using Metric = Metric::SymmetricSpherical;
-#endif
+  using Metric   = Metric::Polar;
 
   const Index jt = u.y.ny() - 1;
   Float Qin      = 0.0;
@@ -106,7 +94,6 @@ void correct_outflow(const Grid<Float, LAYOUT>& grid, FaceVector<Float, LAYOUT> 
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
 constexpr auto calc_m_dot_total(const Grid<Float, LAYOUT>& grid, Scalar<Float, LAYOUT> T) -> Float {
-#if DIMENSION == 2
   const auto m_dot_total = grid.transform_reduce_range(
       0,
       grid.nx(),
@@ -121,31 +108,12 @@ constexpr auto calc_m_dot_total(const Grid<Float, LAYOUT>& grid, Scalar<Float, L
       },
       std::plus<>{});
   return m_dot_total * 2.0 * grid.dtheta() * grid.r_min();
-#else
-  const auto m_dot_total = grid.transform_reduce_range(
-      0,
-      grid.nx(),
-      0,
-      1,
-      0.0,
-      [=](Index i, Index /*j*/) -> Float {
-        // Second order one-sided finite differences on non-uniform grid
-        const auto dTdr  = (-8.0 * Tsat + 9.0 * T(i, 0) - T(i, 1)) / (3.0 * grid.dr());
-        const auto m_dot = kappal * dTdr / hev;  // Assume dTdr=0 in the gas phase
-        return m_dot * (std::cos(grid.theta(i)) - std::cos(grid.theta(i + 1)));
-      },
-      std::plus<>{});
-  return m_dot_total * 2.0 * pi * Igor::sqr(grid.r_min());
-#endif
 }
 
 template <typename Float>
 constexpr auto calc_r_dot(Float r, Float m_dot_total) -> Float {
-#if DIMENSION == 2
+  // 2D:
   return m_dot_total / (2.0 * pi * rhog * r);
-#else
-  return m_dot_total / (4.0 * pi * Igor::sqr(r) * rhog);
-#endif
 }
 
 // =================================================================================================
@@ -163,17 +131,10 @@ auto main(int argc, char** argv) -> int {
     return 1;
   }
 
-  const auto output_dir = "./output/scriven-" + std::to_string(DIMENSION) + "d/";
+  const auto output_dir = get_output_directory();
   if (!init_output_directory(output_dir)) { return 1; }
 
-  Grid<Float> grid(theta_min,
-                   theta_max,
-                   N,
-                   r_min,
-                   r_max,
-                   N,
-                   3,
-                   DIMENSION == 2 ? Coordinates::POLAR : Coordinates::SYMMETRIC_SPHERICAL);
+  Grid<Float> grid(theta_min, theta_max, N / 2, r_min, r_max, N, 3, Coordinates::POLAR);
   auto u_old = grid.alloc_face_vector();
   auto u     = grid.alloc_face_vector();
   auto ui    = grid.alloc_vector();
@@ -182,9 +143,6 @@ auto main(int argc, char** argv) -> int {
   auto FUY   = grid.alloc_vertex_scalar();
   auto FVX   = grid.alloc_vertex_scalar();
   auto FVY   = grid.alloc_scalar();
-#if DIMENSION == 3
-  auto FWZ = grid.alloc_scalar();
-#endif
 
   auto div   = grid.alloc_scalar();
   auto p     = grid.alloc_scalar();
@@ -201,7 +159,7 @@ auto main(int argc, char** argv) -> int {
       .Tsat      = Tsat,
       .Tinf      = Tinf,
       .beta      = 0.0,
-      .dimension = DIMENSION,
+      .dimension = 2,
   };
   Scriven::calc_beta(params);
   Igor::Info("Scriven::Params = {{");
@@ -340,19 +298,16 @@ auto main(int argc, char** argv) -> int {
   monitor.add_variable(&r_dot, "r_dot");
   monitor.add_variable(&r, "r");
   monitor.add_variable(&beta_eff, "beta_eff");
+  monitor.add_variable(&r_abserr, "abserr(r)");
+  monitor.add_variable(&r_dot_abserr, "abserr(r_dot)");
+  monitor.add_variable(&beta_abserr, "abserr(beta)");
+  monitor.add_variable(&r_relerr, "relerr(r)");
+  monitor.add_variable(&r_dot_relerr, "relerr(r_dot)");
+  monitor.add_variable(&beta_relerr, "relerr(beta)");
+  monitor.add_variable(&div_max, "absmax(div)");
   monitor.add_variable(&mg_res, "res(MG)");
   monitor.add_variable(&mg_cycles, "cycles(MG)");
   monitor.write();
-
-  Monitor<Float> error_monitor(output_dir + "/error.log");
-  error_monitor.add_variable(&r_abserr, "abserr(r)");
-  error_monitor.add_variable(&r_dot_abserr, "abserr(r_dot)");
-  error_monitor.add_variable(&beta_abserr, "abserr(beta)");
-  error_monitor.add_variable(&r_relerr, "relerr(r)");
-  error_monitor.add_variable(&r_dot_relerr, "relerr(r_dot)");
-  error_monitor.add_variable(&beta_relerr, "relerr(beta)");
-  error_monitor.add_variable(&div_max, "absmax(div)");
-  error_monitor.write();
   // - Output ------------------------------------------------------------------
 
   IGOR_TIME_SCOPE("Solver")
@@ -369,29 +324,21 @@ auto main(int argc, char** argv) -> int {
     copy(T, T_old);
 
     mg_cycles = 0;
-    // Vec2<Float> w0{};
-    // 1) Mass exchange -> grid velocity
-    m_dot_total      = calc_m_dot_total(grid, T);
-    r_dot            = calc_r_dot(grid.y_min(), m_dot_total);
-    w.r()            = r_dot;
-    ur_bconds.bottom = Dirichlet<Float>{.val = eps * w.r()};
+    Vec2<Float> w0{};
     for (Index sub_iter = 0; sub_iter < 2; ++sub_iter) {
       const auto local_dt = sub_iter == 0 ? 0.5 * dt : dt;
 
-      // if (sub_iter == 0) { w0 = w; }
+      // 1) Mass exchange -> grid velocity
+      m_dot_total      = calc_m_dot_total(grid, T);
+      r_dot            = calc_r_dot(grid.y_min(), m_dot_total);
+      w.r()            = r_dot;
+      ur_bconds.bottom = Dirichlet<Float>{.val = eps * w.r()};
+      if (sub_iter == 0) { w0 = w; }
 
       // 2) Prediction
-#if DIMENSION == 2
       calc_mom_flux(grid, u, p, rhol, mul, w, FUX, FUY, FVX, FVY);
-#else
-      calc_mom_flux(grid, u, p, rhol, mul, w, FUX, FUY, FVX, FVY, FWZ);
-#endif
       calc_advection_flux(grid, u, T, w, alphal, FT);
-#if DIMENSION == 2
       update_u(grid, local_dt, w, FUX, FUY, FVX, FVY, u_old, u);
-#else
-      update_u(grid, local_dt, w, FUX, FUY, FVX, FVY, FWZ, u_old, u);
-#endif
       apply_velocity_bconds(grid, uth_bconds, ur_bconds, u);
 
       // 3) Update the physical position of the grid
@@ -402,7 +349,7 @@ auto main(int argc, char** argv) -> int {
       // 4) Pressure calculation
       calc_div(grid, u, div);
       grid.foreach_i(FOREACH_FUNC { div(i, j) *= rhol / local_dt; });
-      if (!solver.solve(dp, div, 1e-6 / local_dt)) {
+      if (!solver.solve(dp, div, 1e-3 / local_dt)) {
         Igor::Warn("t={:.8f}: Multigrid solver did not converge after {} cycles: res = {:.8e}",
                    t,
                    solver.num_cycles(),
@@ -417,8 +364,7 @@ auto main(int argc, char** argv) -> int {
       apply_velocity_bconds_only_periodic(grid, uth_bconds, ur_bconds, u);
 
       // 6) Update temperature
-      // update_s(grid, local_dt, sub_iter == 0 ? w : (w0 + w) / 2.0, FT, T_old, T);
-      update_s(grid, local_dt, w, FT, T_old, T);
+      update_s(grid, local_dt, sub_iter == 0 ? w : (w0 + w) / 2.0, FT, T_old, T);
       apply_bconds(grid, s_bconds, T, t);
     }
     calc_div(grid, u, div);
@@ -448,7 +394,6 @@ auto main(int argc, char** argv) -> int {
     ts.push_back(t);
 
     monitor.write();
-    error_monitor.write();
     if (should_save(t, dt, dt_write, tend)) {
       writer.update_grid(grid);
       if (!writer.write(t)) { return 1; }

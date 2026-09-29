@@ -75,6 +75,13 @@ constexpr auto operator+(Vec2<Float> lhs, const Vec2<Float>& rhs) -> Vec2<Float>
 }
 
 template <typename Float>
+constexpr auto operator*(Float lhs, Vec2<Float> rhs) -> Vec2<Float> {
+  rhs.x *= lhs;
+  rhs.y *= lhs;
+  return rhs;
+}
+
+template <typename Float>
 constexpr auto operator/(Vec2<Float> lhs, Float rhs) -> Vec2<Float> {
   lhs.x /= rhs;
   lhs.y /= rhs;

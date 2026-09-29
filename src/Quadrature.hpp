@@ -101,3 +101,42 @@ template <typename Float>
   const auto dx = (x_max - x_min) / static_cast<Float>(N - 1);
   return res * dx / 3.0;
 }
+
+// - Simpson's rule to integrate a function in 1D --------------------------------------------------
+template <std::floating_point Float>
+[[nodiscard]] constexpr auto simpson(std::span<const Float> y, std::span<const Float> x) -> Float {
+  if (y.size() != x.size()) {
+    Igor::Panic("`y` and `x` must have the same size, but sizes are {} and {}", y.size(), x.size());
+  }
+
+  const std::size_t n = y.size();
+  if (n < 2) { return Float{0}; }
+  if (n == 2) { return Float{0.5} * (x[1] - x[0]) * (y[0] + y[1]); }
+
+  Float res = 0;
+
+  // Composite Simpson over pairs of intervals [i, i+2], up to index `last`.
+  const std::size_t last = (n % 2 == 1) ? n - 1 : n - 2;
+  for (std::size_t i = 0; i + 2 <= last; i += 2) {
+    const Float h0        = x[i + 1] - x[i];
+    const Float h1        = x[i + 2] - x[i + 1];
+    const Float hsum      = h0 + h1;
+    const Float hprod     = h0 * h1;
+    const Float h0_div_h1 = h0 / h1;
+    res += hsum / Float{6} *
+           (y[i] * (Float{2} - Float{1} / h0_div_h1) + y[i + 1] * (hsum * hsum / hprod) +
+            y[i + 2] * (Float{2} - h0_div_h1));
+  }
+
+  // Cartwright correction for the final interval when N is even.
+  if (n % 2 == 0) {
+    const Float h0     = x[n - 2] - x[n - 3];
+    const Float h1     = x[n - 1] - x[n - 2];
+    const Float alpha  = (Float{2} * h1 * h1 + Float{3} * h0 * h1) / (Float{6} * (h0 + h1));
+    const Float beta   = (h1 * h1 + Float{3} * h0 * h1) / (Float{6} * h0);
+    const Float eta    = (h1 * h1 * h1) / (Float{6} * h0 * (h0 + h1));
+    res               += alpha * y[n - 1] + beta * y[n - 2] - eta * y[n - 3];
+  }
+
+  return res;
+}

@@ -50,7 +50,7 @@ constexpr auto ale_adjust_dt(const Grid<Float, LAYOUT>& grid,
 
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
-void correct_outflow(const Grid<Float, LAYOUT>& grid, FaceVector<Float, LAYOUT> u) {
+constexpr void correct_outflow(const Grid<Float, LAYOUT>& grid, FaceVector<Float, LAYOUT> u) {
   // Rescale the outflow so that it matches the inflow exactly (global continuity).
   Float Qin  = 0.0;
   Float Qout = 0.0;
@@ -62,6 +62,16 @@ void correct_outflow(const Grid<Float, LAYOUT>& grid, FaceVector<Float, LAYOUT> 
   for (Index i = 0; i < u.y.nx(); ++i) {
     u.y(i, u.y.ny() - 1) += corr;
   }
+}
+
+// =================================================================================================
+template <typename Float, Layout LAYOUT>
+constexpr void calc_J(const Grid<Float, LAYOUT>& grid, Scalar<Float, LAYOUT> J) {
+  auto cube = [](Float x) { return x * x * x; };
+  grid.foreach_a(FOREACH_FUNC {
+    J(i, j) = (cube(grid.r(j + 1)) - cube(grid.r(j))) / 3.0 *
+              (std::cos(grid.theta(i)) - std::cos(grid.theta(i + 1)));
+  });
 }
 
 // =================================================================================================
@@ -96,6 +106,9 @@ auto main(int argc, char** argv) -> int {
   auto div   = grid.alloc_scalar();
   auto p     = grid.alloc_scalar();
   auto dp    = grid.alloc_scalar();
+
+  auto J_old = grid.alloc_scalar();
+  auto J     = grid.alloc_scalar();
 
   auto s_old = grid.alloc_scalar();
   auto s     = grid.alloc_scalar();
@@ -144,6 +157,7 @@ auto main(int argc, char** argv) -> int {
   writer.add_field("p", p);
   writer.add_field("div", div);
   writer.add_field("s", s);
+  writer.add_field("J", J);
   if (!writer.write(t)) { return 1; }
 
   Stats p_stats      = stats(grid, p);
@@ -186,6 +200,7 @@ auto main(int argc, char** argv) -> int {
 
     copy(u, u_old);
     copy(s, s_old);
+    copy(J, J_old);
 
     mg_cycles = 0;
     for (Index sub_iter = 0; sub_iter < 2; ++sub_iter) {
@@ -201,6 +216,7 @@ auto main(int argc, char** argv) -> int {
       grid.move_grid_by_velocity(w, 0.5 * dt);
       solver.move_grid_by_velocity(w, 0.5 * dt);
       correct_outflow(grid, u);
+      calc_J(grid, J);
 
       // 3) Pressure calculation
       calc_div(grid, u, div);
@@ -221,7 +237,9 @@ auto main(int argc, char** argv) -> int {
       apply_velocity_bconds_only_periodic(grid, uth_bconds, ur_bconds, u);
 
       // 5) Update scalar
-      update_s(grid, local_dt, w, Fs, s_old, s);
+      // const auto Delta_old  = local_dt * w;
+      // const auto Delta_flux = 0.5 * dt * w;
+      update_s(grid, local_dt, J_old, J, Fs, s_old, s);
       apply_bconds(grid, s_bconds, s, t);
     }
     calc_div(grid, u, div);

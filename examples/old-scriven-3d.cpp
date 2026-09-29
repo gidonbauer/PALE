@@ -21,7 +21,7 @@ using Float               = double;
 constexpr Float pi        = std::numbers::pi_v<Float>;
 
 constexpr Float r_min     = 0.25e-3;  // Initial radius                     [m]
-constexpr Float r_max     = 20.0 * r_min;
+constexpr Float r_max     = 10.0 * r_min;
 constexpr Float theta_min = 0.0;
 constexpr Float theta_max = pi;
 
@@ -59,7 +59,7 @@ constexpr auto ale_adjust_dt(const Grid<Float, LAYOUT>& grid,
                              const Vec2<Float>& w_,
                              Float CFL_) noexcept -> Float {
   // Correction for polar coordinates
-  const auto hx = grid.coords() == Coordinates::POLAR ? grid.ym(0) * grid.dx() : grid.dx();
+  const auto hx = grid.coords() == Coordinates::CARTESIAN ? grid.dx() : grid.ym(0) * grid.dx();
   const auto hy = grid.dy();
 
   // Advection: dt * (|u|/hx + |v|/hy) <= CFL
@@ -71,16 +71,22 @@ constexpr auto ale_adjust_dt(const Grid<Float, LAYOUT>& grid,
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
 void correct_outflow(const Grid<Float, LAYOUT>& grid, FaceVector<Float, LAYOUT> u) {
-  // Rescale the outflow so that it matches the inflow exactly (global continuity).
-  Float Qin  = 0.0;
-  Float Qout = 0.0;
+  using Metric   = Metric::SymmetricSpherical;
+
+  const Index jt = u.y.ny() - 1;
+  Float Qin      = 0.0;
+  Float Qout     = 0.0;
+  Float A_out    = 0.0;
   for (Index i = 0; i < u.y.nx(); ++i) {
-    Qin  += u.y(i, 0) * grid.y_min() * grid.dx();
-    Qout += u.y(i, u.y.ny() - 1) * grid.y_max() * grid.dx();
+    const auto A_b  = Metric::H(grid.xm(i), grid.y(0)) / Metric::h2(grid.xm(i), grid.y(0));
+    const auto A_t  = Metric::H(grid.xm(i), grid.y(jt)) / Metric::h2(grid.xm(i), grid.y(jt));
+    Qin            += u.y(i, 0) * A_b;
+    Qout           += u.y(i, jt) * A_t;
+    A_out          += A_t;
   }
-  const Float corr = (Qin - Qout) / (static_cast<Float>(u.y.nx()) * grid.y_max() * grid.dx());
+  const Float corr = (Qin - Qout) / A_out;
   for (Index i = 0; i < u.y.nx(); ++i) {
-    u.y(i, u.y.ny() - 1) += corr;
+    u.y(i, jt) += corr;
   }
 }
 
@@ -97,16 +103,16 @@ constexpr auto calc_m_dot_total(const Grid<Float, LAYOUT>& grid, Scalar<Float, L
         // Second order one-sided finite differences on non-uniform grid
         const auto dTdr  = (-8.0 * Tsat + 9.0 * T(i, 0) - T(i, 1)) / (3.0 * grid.dr());
         const auto m_dot = kappal * dTdr / hev;  // Assume dTdr=0 in the gas phase
-        return m_dot;
+        return m_dot * (std::cos(grid.theta(i)) - std::cos(grid.theta(i + 1)));
       },
       std::plus<>{});
-  return m_dot_total * 2.0 * grid.dtheta() * grid.r_min();
+  return m_dot_total * 2.0 * pi * Igor::sqr(grid.r_min());
 }
 
 template <typename Float>
 constexpr auto calc_r_dot(Float r, Float m_dot_total) -> Float {
-  // 2D:
-  return m_dot_total / (2.0 * pi * rhog * r);
+  // 3D:
+  return m_dot_total / (4.0 * pi * Igor::sqr(r) * rhog);
 }
 
 // =================================================================================================
@@ -127,7 +133,7 @@ auto main(int argc, char** argv) -> int {
   const auto output_dir = get_output_directory();
   if (!init_output_directory(output_dir)) { return 1; }
 
-  Grid<Float> grid(theta_min, theta_max, N / 2, r_min, r_max, N, 3, Coordinates::POLAR);
+  Grid<Float> grid(theta_min, theta_max, N, r_min, r_max, N, 3, Coordinates::SYMMETRIC_SPHERICAL);
   auto u_old = grid.alloc_face_vector();
   auto u     = grid.alloc_face_vector();
   auto ui    = grid.alloc_vector();
@@ -136,6 +142,7 @@ auto main(int argc, char** argv) -> int {
   auto FUY   = grid.alloc_vertex_scalar();
   auto FVX   = grid.alloc_vertex_scalar();
   auto FVY   = grid.alloc_scalar();
+  auto FWZ   = grid.alloc_scalar();
 
   auto div   = grid.alloc_scalar();
   auto p     = grid.alloc_scalar();
@@ -152,7 +159,7 @@ auto main(int argc, char** argv) -> int {
       .Tsat      = Tsat,
       .Tinf      = Tinf,
       .beta      = 0.0,
-      .dimension = 2,
+      .dimension = 3,
   };
   Scriven::calc_beta(params);
   Igor::Info("Scriven::Params = {{");
@@ -233,14 +240,14 @@ auto main(int argc, char** argv) -> int {
   };
   MultigridSolver solver(grid, dp_bconds);
 
-  const BConds<Float> s_bconds{
+  const BConds<Float> T_bconds{
       .left   = Neumann(),
       .right  = Neumann(),
       .bottom = Dirichlet<Float>{.val = Tsat},
       .top    = Dirichlet<Float>{.val = Tinf},
   };
   grid.foreach_i(FOREACH_FUNC { T(i, j) = Scriven::T(grid.rm(j), t, params); });
-  apply_bconds(grid, s_bconds, T, t);
+  apply_bconds(grid, T_bconds, T, t);
 
   // - Output ------------------------------------------------------------------
   HDFWriter writer(output_dir, grid);
@@ -269,8 +276,15 @@ auto main(int argc, char** argv) -> int {
   Float r_dot_relerr = r_dot_abserr / Scriven::R_dot(t, params);
   Float beta_relerr  = beta_abserr / params.beta;
 
-  Float mg_res       = 0.0;
-  Index mg_cycles    = 0;
+  std::vector<Float> rs{};
+  std::vector<Float> r_dots{};
+  std::vector<Float> ts{};
+  rs.push_back(r);
+  r_dots.push_back(r_dot);
+  ts.push_back(t);
+
+  Float mg_res    = 0.0;
+  Index mg_cycles = 0;
 
   Monitor<Float> monitor(output_dir + "/monitor.log");
   monitor.add_variable(&t, "t");
@@ -322,9 +336,9 @@ auto main(int argc, char** argv) -> int {
       if (sub_iter == 0) { w0 = w; }
 
       // 2) Prediction
-      calc_mom_flux(grid, u, p, rhol, mul, w, FUX, FUY, FVX, FVY);
+      calc_mom_flux(grid, u, p, rhol, mul, w, FUX, FUY, FVX, FVY, FWZ);
       calc_advection_flux(grid, u, T, w, alphal, FT);
-      update_u(grid, local_dt, w, FUX, FUY, FVX, FVY, u_old, u);
+      update_u(grid, local_dt, w, FUX, FUY, FVX, FVY, FWZ, u_old, u);
       apply_velocity_bconds(grid, uth_bconds, ur_bconds, u);
 
       // 3) Update the physical position of the grid
@@ -335,7 +349,7 @@ auto main(int argc, char** argv) -> int {
       // 4) Pressure calculation
       calc_div(grid, u, div);
       grid.foreach_i(FOREACH_FUNC { div(i, j) *= rhol / local_dt; });
-      if (!solver.solve(dp, div, 1e-3 / local_dt)) {
+      if (!solver.solve(dp, div, 1e-6 / local_dt)) {
         Igor::Warn("t={:.8f}: Multigrid solver did not converge after {} cycles: res = {:.8e}",
                    t,
                    solver.num_cycles(),
@@ -351,7 +365,7 @@ auto main(int argc, char** argv) -> int {
 
       // 6) Update temperature
       update_s(grid, local_dt, sub_iter == 0 ? w : (w0 + w) / 2.0, FT, T_old, T);
-      apply_bconds(grid, s_bconds, T, t);
+      apply_bconds(grid, T_bconds, T, t);
     }
     calc_div(grid, u, div);
     interpolate(grid, u, ui);

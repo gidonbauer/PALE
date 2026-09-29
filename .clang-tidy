@@ -26,7 +26,8 @@ Checks:
   -cppcoreguidelines-pro-bounds-constant-array-index,
   -modernize-use-trailing-return-type,
   -cppcoreguidelines-pro-type-reinterpret-cast,
-  -cppcoreguidelines-avoid-do-while
+  -cppcoreguidelines-avoid-do-while,
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access
 
 CheckOptions:
   {IgnoreMacros: true}

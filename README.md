@@ -83,3 +83,8 @@ The output can be visualized with [ParaView](https://www.paraview.org/).
 - [TBB](https://www.intel.com/content/www/us/en/developer/tools/oneapi/onetbb.html): Parallelization for `g++` and `icpx`. Path set via `TBB_DIR`
 - [GSL](https://www.gnu.org/software/gsl/): Root finding in Scriven example. Path set via `GSL_DIR`
 - [cpptrace](https://github.com/jeremy-rifkin/cpptrace): Optional for printing backtraces. Path set via `CPPTRACE_DIR`
+
+## TODO
+
+- Look into toroidal coordinate systems to model the bubble at the wall, see Popov, Y.O., 2005. Evaporative deposition patterns: Spatial dimensions of the deposit. Phys. Rev. E 71, 036313. https://doi.org/10.1103/PhysRevE.71.036313
+

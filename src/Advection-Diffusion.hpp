@@ -89,18 +89,12 @@ constexpr void update_s(const Grid<Float, LAYOUT>& grid,
 template <typename Metric, typename Float, Layout LAYOUT>
 constexpr void update_s(const Grid<Float, LAYOUT>& grid,
                         Float dt,
-                        const Vec2<Float>& w,
+                        const Scalar<Float, LAYOUT> J_old,
+                        const Scalar<Float, LAYOUT> J,
                         const FaceVector<Float, LAYOUT> F,
                         const Scalar<Float, LAYOUT> s_old,
                         Scalar<Float, LAYOUT> s) {
   grid.foreach_i(FOREACH_FUNC {
-    const auto dFthdth  = (F.right(i, j) - F.left(i, j)) / grid.dx();
-    const auto dFrdr    = (F.top(i, j) - F.bottom(i, j)) / grid.dy();
-    const auto Fr       = (F.top(i, j) + F.bottom(i, j)) / 2.0;
-    const auto r        = grid.ym(j);
-    const auto r_old    = r - dt * w.r();
-    s(i, j)             = (r_old * s_old(i, j) + r * dt * (dFrdr + dFthdth / r + Fr / r)) / r;
-
     const auto H_right  = Metric::H(grid.x(i + 1), grid.ym(j));
     const auto h1_right = Metric::h1(grid.x(i + 1), grid.ym(j));
     const auto H_left   = Metric::H(grid.x(i), grid.ym(j));
@@ -115,11 +109,20 @@ constexpr void update_s(const Grid<Float, LAYOUT>& grid,
     const auto dFdq2 =
         (H_top / h2_top * F.top(i, j) - H_bottom / h2_bottom * F.bottom(i, j)) / grid.dy();
 
+    // const auto H_old  = Metric::H(grid.xm(i) - Delta_old.x, grid.ym(j) - Delta_old.y);
+    // const auto H_flux = Metric::H(grid.xm(i) - Delta_flux.x, grid.ym(j) - Delta_flux.y);
     const auto inv_H = 1.0 / Metric::H(grid.xm(i), grid.ym(j));
 
-    const auto H_old = Metric::H(grid.xm(i) - dt * w.x, grid.ym(j) - dt * w.y);
+    // const auto div_w =
+    //     inv_H *
+    //     (w.x * (Metric::h2(grid.xm(i), grid.ym(j)) * Metric::dh3_dq1(grid.xm(i), grid.ym(j)) +
+    //             Metric::h3(grid.xm(i), grid.ym(j)) * Metric::dh2_dq1(grid.xm(i), grid.ym(j))) +
+    //      w.y * (Metric::h1(grid.xm(i), grid.ym(j)) * Metric::dh3_dq2(grid.xm(i), grid.ym(j)) +
+    //             Metric::h3(grid.xm(i), grid.ym(j)) * Metric::dh1_dq2(grid.xm(i), grid.ym(j))));
 
-    s(i, j)          = (H_old * s_old(i, j) + dt * (dFdq1 + dFdq2)) * inv_H;
+    s(i, j) = (J_old(i, j) * s_old(i, j) + dt * inv_H * (dFdq1 + dFdq2)) / J(i, j);
+    // s(i, j) = s_old(i, j) + dt * (inv_H * (dFdq1 + dFdq2) + s(i, j) * div_w);
+    // s(i, j) = (H_old * s_old(i, j) + dt * (dFdq1 + dFdq2)) * inv_H;
   });
 }
 
@@ -229,16 +232,18 @@ constexpr void update_s(const Grid<Float, LAYOUT>& grid,
 template <typename Float, Layout LAYOUT>
 constexpr void update_s(const Grid<Float, LAYOUT>& grid,
                         Float dt,
-                        const Vec2<Float>& w,
+                        const Scalar<Float, LAYOUT> J_old,
+                        const Scalar<Float, LAYOUT> J,
                         const FaceVector<Float, LAYOUT> F,
                         const Scalar<Float, LAYOUT> s_old,
                         Scalar<Float, LAYOUT> s) {
   switch (grid.coords()) {
     case Coordinates::CARTESIAN:
-      return Orthogonal::update_s<Metric::Cartesian>(grid, dt, w, F, s_old, s);
-    case Coordinates::POLAR: return Orthogonal::update_s<Metric::Polar>(grid, dt, w, F, s_old, s);
+      return Orthogonal::update_s<Metric::Cartesian>(grid, dt, J_old, J, F, s_old, s);
+    case Coordinates::POLAR:
+      return Orthogonal::update_s<Metric::Polar>(grid, dt, J_old, J, F, s_old, s);
     case Coordinates::SYMMETRIC_SPHERICAL:
-      return Orthogonal::update_s<Metric::SymmetricSpherical>(grid, dt, w, F, s_old, s);
+      return Orthogonal::update_s<Metric::SymmetricSpherical>(grid, dt, J_old, J, F, s_old, s);
   }
   Igor::Panic("Unreachable");
 }

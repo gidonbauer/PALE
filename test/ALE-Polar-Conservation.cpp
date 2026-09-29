@@ -220,7 +220,9 @@ auto main(int argc, char** argv) -> int {
       apply_velocity_bconds_only_periodic(grid, uth_bconds, ur_bconds, u);
 
       // 5) Update scalar
-      update_s(grid, local_dt, w, Fs, s_old, s);
+      const auto Delta_old  = local_dt * w;
+      const auto Delta_flux = 0.5 * dt * w;
+      update_s(grid, local_dt, J_old, J, Fs, s_old, s);
       apply_bconds(grid, s_bconds, s, t);
     }
     calc_div(grid, u, div);
@@ -254,7 +256,7 @@ auto main(int argc, char** argv) -> int {
     }
     return 1e-12;
   }();
-  if (abserr_conservation > tol) {
+  if (abserr_conservation > tol || std::isnan(abserr_conservation)) {
     Igor::Error("Did not conserve scalar `s`, abs. error of conservation is {:.16}, expected <{}",
                 abserr_conservation,
                 tol);
