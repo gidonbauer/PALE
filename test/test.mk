@@ -7,7 +7,8 @@ DEFAULT_BUILD_TESTS = test/Advection-Cartesian.cpp \
                       test/Multigrid-Spherical.cpp \
                       test/Hill-Vortex \
                       test/ALE-Polar-Conservation \
-                      test/ALE-Spherical-Conservation
+                      test/ALE-Spherical-Conservation \
+                      test/GCL
 DEFAULT_BUILD_TESTS := ${addprefix bin/, ${basename ${DEFAULT_BUILD_TESTS}}}
 
 ${DEFAULT_BUILD_TESTS}: bin/test/%: test/%.cpp ${HEADERS} | bin/test test/output

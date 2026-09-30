@@ -27,32 +27,34 @@ class TestResult:
     cpu_time: float   # user + system seconds
     max_rss: int      # peak resident set, bytes
 
-NameInput = Tuple[str, Union[int, None]]
+Input = Union[int, str, None]
+NameInput = Tuple[str, Input]
 Results = Dict[NameInput, TestResult]
 
 
 @dataclass
 class TestCase:
     name: str
-    input: Union[List[int], None]
+    input: Union[List[int], List[str], None]
     parallel: bool
 
 ALL_TESTS = [
-    TestCase("Taylor-Green-MG",             [8, 16, 64],                False),
-    TestCase("Taylor-Green-FFT",            [8, 16, 64],                False),
-    TestCase("Channel-MG",                  [16, 32, 64],               False),
-    TestCase("Channel-FFT",                 [16, 32, 64],               False),
-    TestCase("Polar-Couette",               [8, 16, 32],                False),
-    TestCase("Polar-Channel",               [8, 16, 32, 64],            False),
-    TestCase("Advection-Cartesian",         [16, 32, 64, 128],          False),
-    TestCase("Advection-Polar",             [16, 32, 64, 128],          False),
-    TestCase("Multigrid",                   [32, 64, 128, 512, 1024],   False),
-    TestCase("Multigrid-Spherical",         [16, 32, 64, 128, 256],     False),
-    TestCase("Hill-Vortex",                 [16, 32, 64],               False),
-    TestCase("ALE-Polar-Conservation",      [16, 32, 64, 128],          False),
-    TestCase("ALE-Spherical-Conservation",  [16, 32, 64, 128],          False),
-    TestCase("Iterator",                    None,                       True),
-    TestCase("Boundary",                    None,                       False),
+    TestCase("Taylor-Green-MG",             [8, 16, 64],                            False),
+    TestCase("Taylor-Green-FFT",            [8, 16, 64],                            False),
+    TestCase("Channel-MG",                  [16, 32, 64],                           False),
+    TestCase("Channel-FFT",                 [16, 32, 64],                           False),
+    TestCase("Polar-Couette",               [8, 16, 32],                            False),
+    TestCase("Polar-Channel",               [8, 16, 32, 64],                        False),
+    TestCase("Advection-Cartesian",         [16, 32, 64, 128],                      False),
+    TestCase("Advection-Polar",             [16, 32, 64, 128],                      False),
+    TestCase("Multigrid",                   [32, 64, 128, 512, 1024],               False),
+    TestCase("Multigrid-Spherical",         [16, 32, 64, 128, 256],                 False),
+    TestCase("Hill-Vortex",                 [16, 32, 64],                           False),
+    TestCase("ALE-Polar-Conservation",      [16, 32, 64, 128],                      False),
+    TestCase("ALE-Spherical-Conservation",  [16, 32, 64, 128],                      False),
+    TestCase("GCL",                         ["Cartesian", "Polar", "Spherical"],    False),
+    TestCase("Iterator",                    None,                                   True),
+    TestCase("Boundary",                    None,                                   False),
 ]
 
 
@@ -87,7 +89,7 @@ def build_tests(cases: List[TestCase], jobs: int = 1, force_parallel: bool = Fal
     return True
 
 
-def run_name(name: str, inp: Union[int, None]):
+def run_name(name: str, inp: Input):
     return name if inp is None else f"{name}-{inp}"
 
 
@@ -129,7 +131,7 @@ def run_test(cmd: List[str], name: str, echo: bool = False) -> TestResult:
 
 
 def run_tests(cases: List[TestCase], jobs: int = 1, verbose: bool = False) -> Results:
-    work: List[Tuple[Tuple[str, Union[int, None]], List[str]]] = []
+    work: List[Tuple[NameInput, List[str]]] = []
     for test in cases:
         exe = f"{BIN_DIR}/{test.name}"
         if test.input is None:
@@ -223,7 +225,7 @@ def render_results(results: Results, file: TextIO = sys.stdout) -> None:
 
 
 LOG_PATH = "test/logs/"
-def log_paths(name: str, inp: Union[str, None]) -> Tuple[str, str]:
+def log_paths(name: str, inp: Input) -> Tuple[str, str]:
     rname = run_name(name, inp)
     stdout_path = f"{LOG_PATH}/{rname}.stdout".replace("//", "/")
     stderr_path = f"{LOG_PATH}/{rname}.stderr".replace("//", "/")
