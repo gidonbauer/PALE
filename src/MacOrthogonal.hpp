@@ -57,11 +57,11 @@ constexpr void calc_mom_flux(const Grid<Float, LAYOUT>& grid,
     const auto inv_h1h2 = inv_h1 * inv_h2;
 
     FUX(i, j) =
-        -Igor::sqr(u1) - p(i, j) / rho +
+        Igor::sqr(u1) + p(i, j) / rho -
         2.0 * nu * (du1dq1 * inv_h1 + u2 * inv_h1h2 * Metric::dh1_dq2(grid.xm(i), grid.ym(j)));
 
     FVY(i, j) =
-        -Igor::sqr(u2) - p(i, j) / rho +
+        Igor::sqr(u2) + p(i, j) / rho -
         2.0 * nu * (du2dq2 * inv_h2 + u1 * inv_h1h2 * Metric::dh2_dq1(grid.xm(i), grid.ym(j)));
   });
 
@@ -75,13 +75,13 @@ constexpr void calc_mom_flux(const Grid<Float, LAYOUT>& grid,
     const auto inv_h2   = 1.0 / Metric::h2(grid.x(i), grid.y(j));
     const auto inv_h1h2 = inv_h1 * inv_h2;
 
-    FUY(i, j)           = -u1 * u2 + nu * (du2dq1 * inv_h1 + du1dq2 * inv_h2 -
-                                           u1 * inv_h1h2 * Metric::dh1_dq2(grid.x(i), grid.y(j)) -
-                                           u2 * inv_h1h2 * Metric::dh2_dq1(grid.x(i), grid.y(j)));
+    FUY(i, j)           = u1 * u2 - nu * (du2dq1 * inv_h1 + du1dq2 * inv_h2 -
+                                          u1 * inv_h1h2 * Metric::dh1_dq2(grid.x(i), grid.y(j)) -
+                                          u2 * inv_h1h2 * Metric::dh2_dq1(grid.x(i), grid.y(j)));
 
-    FVX(i, j)           = -u1 * u2 + nu * (du2dq1 * inv_h1 + du1dq2 * inv_h2 -
-                                           u1 * inv_h1h2 * Metric::dh1_dq2(grid.x(i), grid.y(j)) -
-                                           u2 * inv_h1h2 * Metric::dh2_dq1(grid.x(i), grid.y(j)));
+    FVX(i, j)           = u1 * u2 - nu * (du2dq1 * inv_h1 + du1dq2 * inv_h2 -
+                                          u1 * inv_h1h2 * Metric::dh1_dq2(grid.x(i), grid.y(j)) -
+                                          u2 * inv_h1h2 * Metric::dh2_dq1(grid.x(i), grid.y(j)));
   });
 }
 
@@ -118,13 +118,13 @@ constexpr void calc_mom_flux(const Grid<Float, LAYOUT>& grid,
     const auto inv_h1h2 = inv_h1 * inv_h2;
 
     FUX(i, j) =
-        -Igor::sqr(u1) - p(i, j) / rho +
-        2.0 * nu * (du1dq1 * inv_h1 + u2 * inv_h1h2 * Metric::dh1_dq2(grid.xm(i), grid.ym(j))) +
+        Igor::sqr(u1) + p(i, j) / rho -
+        2.0 * nu * (du1dq1 * inv_h1 + u2 * inv_h1h2 * Metric::dh1_dq2(grid.xm(i), grid.ym(j))) -
         u1 * w.x;
 
     FVY(i, j) =
-        -Igor::sqr(u2) - p(i, j) / rho +
-        2.0 * nu * (du2dq2 * inv_h2 + u1 * inv_h1h2 * Metric::dh2_dq1(grid.xm(i), grid.ym(j))) +
+        Igor::sqr(u2) + p(i, j) / rho -
+        2.0 * nu * (du2dq2 * inv_h2 + u1 * inv_h1h2 * Metric::dh2_dq1(grid.xm(i), grid.ym(j))) -
         u2 * w.y;
   });
 
@@ -138,16 +138,16 @@ constexpr void calc_mom_flux(const Grid<Float, LAYOUT>& grid,
     const auto inv_h2   = 1.0 / Metric::h2(grid.x(i), grid.y(j));
     const auto inv_h1h2 = inv_h1 * inv_h2;
 
-    FUY(i, j)           = -u1 * u2 +
+    FUY(i, j)           = u1 * u2 -
                           nu * (du2dq1 * inv_h1 + du1dq2 * inv_h2 -
                                 u1 * inv_h1h2 * Metric::dh1_dq2(grid.x(i), grid.y(j)) -
-                                u2 * inv_h1h2 * Metric::dh2_dq1(grid.x(i), grid.y(j))) +
+                                u2 * inv_h1h2 * Metric::dh2_dq1(grid.x(i), grid.y(j))) -
                           u1 * w.y;
 
-    FVX(i, j)           = -u1 * u2 +
+    FVX(i, j)           = u1 * u2 -
                           nu * (du2dq1 * inv_h1 + du1dq2 * inv_h2 -
                                 u1 * inv_h1h2 * Metric::dh1_dq2(grid.x(i), grid.y(j)) -
-                                u2 * inv_h1h2 * Metric::dh2_dq1(grid.x(i), grid.y(j))) +
+                                u2 * inv_h1h2 * Metric::dh2_dq1(grid.x(i), grid.y(j))) -
                           u2 * w.x;
   });
 }
@@ -180,17 +180,17 @@ constexpr void calc_mom_flux(const Grid<Float, LAYOUT>& grid,
     const auto inv_h1h2 = inv_h1 * inv_h2;
 
     FUX(i, j) =
-        -Igor::sqr(u1) - p(i, j) / rho +
+        Igor::sqr(u1) + p(i, j) / rho -
         2.0 * nu * (du1dq1 * inv_h1 + u2 * inv_h1h2 * Metric::dh1_dq2(grid.xm(i), grid.ym(j)));
 
     FVY(i, j) =
-        -Igor::sqr(u2) - p(i, j) / rho +
+        Igor::sqr(u2) + p(i, j) / rho -
         2.0 * nu * (du2dq2 * inv_h2 + u1 * inv_h1h2 * Metric::dh2_dq1(grid.xm(i), grid.ym(j)));
 
     FWZ(i, j) =
-        -p(i, j) / rho + 2.0 * nu *
-                             (u1 * inv_h1 * inv_h3 * Metric::dh3_dq1(grid.xm(i), grid.ym(j)) +
-                              u2 * inv_h2 * inv_h3 * Metric::dh3_dq2(grid.xm(i), grid.ym(j)));
+        p(i, j) / rho - 2.0 * nu *
+                            (u1 * inv_h1 * inv_h3 * Metric::dh3_dq1(grid.xm(i), grid.ym(j)) +
+                             u2 * inv_h2 * inv_h3 * Metric::dh3_dq2(grid.xm(i), grid.ym(j)));
   });
 
   grid.foreach_vertex_i(FOREACH_FUNC {
@@ -203,13 +203,13 @@ constexpr void calc_mom_flux(const Grid<Float, LAYOUT>& grid,
     const auto inv_h2   = 1.0 / Metric::h2(grid.x(i), grid.y(j));
     const auto inv_h1h2 = inv_h1 * inv_h2;
 
-    FUY(i, j)           = -u1 * u2 + nu * (du2dq1 * inv_h1 + du1dq2 * inv_h2 -
-                                           u1 * inv_h1h2 * Metric::dh1_dq2(grid.x(i), grid.y(j)) -
-                                           u2 * inv_h1h2 * Metric::dh2_dq1(grid.x(i), grid.y(j)));
+    FUY(i, j)           = u1 * u2 - nu * (du2dq1 * inv_h1 + du1dq2 * inv_h2 -
+                                          u1 * inv_h1h2 * Metric::dh1_dq2(grid.x(i), grid.y(j)) -
+                                          u2 * inv_h1h2 * Metric::dh2_dq1(grid.x(i), grid.y(j)));
 
-    FVX(i, j)           = -u1 * u2 + nu * (du2dq1 * inv_h1 + du1dq2 * inv_h2 -
-                                           u1 * inv_h1h2 * Metric::dh1_dq2(grid.x(i), grid.y(j)) -
-                                           u2 * inv_h1h2 * Metric::dh2_dq1(grid.x(i), grid.y(j)));
+    FVX(i, j)           = u1 * u2 - nu * (du2dq1 * inv_h1 + du1dq2 * inv_h2 -
+                                          u1 * inv_h1h2 * Metric::dh1_dq2(grid.x(i), grid.y(j)) -
+                                          u2 * inv_h1h2 * Metric::dh2_dq1(grid.x(i), grid.y(j)));
   });
 }
 
@@ -248,19 +248,19 @@ constexpr void calc_mom_flux(const Grid<Float, LAYOUT>& grid,
     const auto inv_h1h2 = inv_h1 * inv_h2;
 
     FUX(i, j) =
-        -Igor::sqr(u1) - p(i, j) / rho +
-        2.0 * nu * (du1dq1 * inv_h1 + u2 * inv_h1h2 * Metric::dh1_dq2(grid.xm(i), grid.ym(j))) +
+        Igor::sqr(u1) + p(i, j) / rho -
+        2.0 * nu * (du1dq1 * inv_h1 + u2 * inv_h1h2 * Metric::dh1_dq2(grid.xm(i), grid.ym(j))) -
         u1 * w.x;
 
     FVY(i, j) =
-        -Igor::sqr(u2) - p(i, j) / rho +
-        2.0 * nu * (du2dq2 * inv_h2 + u1 * inv_h1h2 * Metric::dh2_dq1(grid.xm(i), grid.ym(j))) +
+        Igor::sqr(u2) + p(i, j) / rho -
+        2.0 * nu * (du2dq2 * inv_h2 + u1 * inv_h1h2 * Metric::dh2_dq1(grid.xm(i), grid.ym(j))) -
         u2 * w.y;
 
     FWZ(i, j) =
-        -p(i, j) / rho + 2.0 * nu *
-                             (u1 * inv_h1 * inv_h3 * Metric::dh3_dq1(grid.xm(i), grid.ym(j)) +
-                              u2 * inv_h2 * inv_h3 * Metric::dh3_dq2(grid.xm(i), grid.ym(j)));
+        p(i, j) / rho - 2.0 * nu *
+                            (u1 * inv_h1 * inv_h3 * Metric::dh3_dq1(grid.xm(i), grid.ym(j)) +
+                             u2 * inv_h2 * inv_h3 * Metric::dh3_dq2(grid.xm(i), grid.ym(j)));
   });
 
   grid.foreach_vertex_i(FOREACH_FUNC {
@@ -273,16 +273,16 @@ constexpr void calc_mom_flux(const Grid<Float, LAYOUT>& grid,
     const auto inv_h2   = 1.0 / Metric::h2(grid.x(i), grid.y(j));
     const auto inv_h1h2 = inv_h1 * inv_h2;
 
-    FUY(i, j)           = -u1 * u2 +
+    FUY(i, j)           = u1 * u2 -
                           nu * (du2dq1 * inv_h1 + du1dq2 * inv_h2 -
                                 u1 * inv_h1h2 * Metric::dh1_dq2(grid.x(i), grid.y(j)) -
-                                u2 * inv_h1h2 * Metric::dh2_dq1(grid.x(i), grid.y(j))) +
+                                u2 * inv_h1h2 * Metric::dh2_dq1(grid.x(i), grid.y(j))) -
                           u1 * w.y;
 
-    FVX(i, j)           = -u1 * u2 +
+    FVX(i, j)           = u1 * u2 -
                           nu * (du2dq1 * inv_h1 + du1dq2 * inv_h2 -
                                 u1 * inv_h1h2 * Metric::dh1_dq2(grid.x(i), grid.y(j)) -
-                                u2 * inv_h1h2 * Metric::dh2_dq1(grid.x(i), grid.y(j))) +
+                                u2 * inv_h1h2 * Metric::dh2_dq1(grid.x(i), grid.y(j))) -
                           u2 * w.x;
   });
 }
@@ -323,7 +323,7 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
     const auto inv_h1h2 =
         1.0 / (Metric::h1(grid.x(i), grid.ym(j)) * Metric::h2(grid.x(i), grid.ym(j)));
 
-    u.x(i, j) = u_old.x(i, j) + dt * (inv_H * (dHT11_dq1 + dHT21_dq2) +
+    u.x(i, j) = u_old.x(i, j) - dt * (inv_H * (dHT11_dq1 + dHT21_dq2) +
                                       inv_h1h2 * (T12 * Metric::dh1_dq2(grid.x(i), grid.ym(j)) +
                                                   T22 * Metric::dh2_dq1(grid.x(i), grid.ym(j))));
   });
@@ -348,7 +348,7 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
     const auto inv_h1h2 =
         1.0 / (Metric::h1(grid.xm(i), grid.y(j)) * Metric::h2(grid.xm(i), grid.y(j)));
 
-    u.y(i, j) = u_old.y(i, j) + dt * (inv_H * (dHT12_dq1 + dHT22_dq2) +
+    u.y(i, j) = u_old.y(i, j) - dt * (inv_H * (dHT12_dq1 + dHT22_dq2) +
                                       inv_h1h2 * (T21 * Metric::dh2_dq1(grid.xm(i), grid.y(j)) -
                                                   T11 * Metric::dh1_dq2(grid.xm(i), grid.y(j))));
   });
@@ -400,7 +400,7 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
                                    w.y * (h1 * Metric::dh3_dq2(grid.x(i), grid.ym(j)) +
                                           h3 * Metric::dh1_dq2(grid.x(i), grid.ym(j))));
 
-    u.x(i, j) = u_old.x(i, j) + dt * (inv_H * (dHT11_dq1 + dHT21_dq2) +
+    u.x(i, j) = u_old.x(i, j) - dt * (inv_H * (dHT11_dq1 + dHT21_dq2) +
                                       inv_h1h2 * (T12 * Metric::dh1_dq2(grid.x(i), grid.ym(j)) +
                                                   T22 * Metric::dh2_dq1(grid.x(i), grid.ym(j))) +
                                       u.x(i, j) * div_w);
@@ -433,7 +433,7 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
                                    w.y * (h1 * Metric::dh3_dq2(grid.xm(i), grid.y(j)) +
                                           h3 * Metric::dh1_dq2(grid.xm(i), grid.y(j))));
 
-    u.y(i, j) = u_old.y(i, j) + dt * (inv_H * (dHT12_dq1 + dHT22_dq2) +
+    u.y(i, j) = u_old.y(i, j) - dt * (inv_H * (dHT12_dq1 + dHT22_dq2) +
                                       inv_h1h2 * (T21 * Metric::dh2_dq1(grid.xm(i), grid.y(j)) -
                                                   T11 * Metric::dh1_dq2(grid.xm(i), grid.y(j))) +
                                       u.y(i, j) * div_w);
@@ -477,7 +477,7 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
     const auto inv_h1h2 = inv_h1 * inv_h2;
 
     u.x(i, j) =
-        u_old.x(i, j) + dt * (inv_H * (dHT11_dq1 + dHT21_dq2) +
+        u_old.x(i, j) - dt * (inv_H * (dHT11_dq1 + dHT21_dq2) +
                               inv_h1h2 * (T12 * Metric::dh1_dq2(grid.x(i), grid.ym(j)) +
                                           T22 * Metric::dh2_dq1(grid.x(i), grid.ym(j))) -
                               inv_h1 * inv_h3 * T33 * Metric::dh3_dq1(grid.x(i), grid.ym(j)));
@@ -507,7 +507,7 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
     const auto inv_h1h2 = inv_h1 * inv_h2;
 
     u.y(i, j) =
-        u_old.y(i, j) + dt * (inv_H * (dHT12_dq1 + dHT22_dq2) +
+        u_old.y(i, j) - dt * (inv_H * (dHT12_dq1 + dHT22_dq2) +
                               inv_h1h2 * (T21 * Metric::dh2_dq1(grid.xm(i), grid.y(j)) -
                                           T11 * Metric::dh1_dq2(grid.xm(i), grid.y(j))) -
                               inv_h2 * inv_h3 * T33 * Metric::dh3_dq2(grid.xm(i), grid.y(j)));
@@ -555,7 +555,7 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
                                 w.y * (h1 * Metric::dh3_dq2(grid.x(i), grid.ym(j)) +
                                        h3 * Metric::dh1_dq2(grid.x(i), grid.ym(j))));
 
-    u.x(i, j) = u_old.x(i, j) +
+    u.x(i, j) = u_old.x(i, j) -
                 dt * (inv_H * (dHT11_dq1 + dHT21_dq2) +
                       (T12 * Metric::dh1_dq2(grid.x(i), grid.ym(j)) +
                        T22 * Metric::dh2_dq1(grid.x(i), grid.ym(j))) /
@@ -590,7 +590,7 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
                                 w.y * (h1 * Metric::dh3_dq2(grid.xm(i), grid.y(j)) +
                                        h3 * Metric::dh1_dq2(grid.xm(i), grid.y(j))));
 
-    u.y(i, j) = u_old.y(i, j) +
+    u.y(i, j) = u_old.y(i, j) -
                 dt * (inv_H * (dHT12_dq1 + dHT22_dq2) +
                       (T21 * Metric::dh2_dq1(grid.xm(i), grid.y(j)) -
                        T11 * Metric::dh1_dq2(grid.xm(i), grid.y(j))) /
