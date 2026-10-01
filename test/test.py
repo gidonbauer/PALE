@@ -10,7 +10,7 @@ import tempfile
 import argparse
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import Union, List, Dict, Tuple, TextIO
+from typing import Union, List, Dict, Tuple, Set, TextIO
 from dataclasses import dataclass
 
 
@@ -38,23 +38,28 @@ class TestCase:
     input: Union[List[int], List[str], None]
     parallel: bool
 
+    def __hash__(self):
+        inp = tuple(self.input) if self.input is not None else None
+        return hash((self.name, inp, self.parallel))
+
+
 ALL_TESTS = [
-    TestCase("Taylor-Green-MG",             [8, 16, 64],                            False),
-    TestCase("Taylor-Green-FFT",            [8, 16, 64],                            False),
-    TestCase("Channel-MG",                  [16, 32, 64],                           False),
-    TestCase("Channel-FFT",                 [16, 32, 64],                           False),
-    TestCase("Polar-Couette",               [8, 16, 32],                            False),
-    TestCase("Polar-Channel",               [8, 16, 32, 64],                        False),
-    TestCase("Advection-Cartesian",         [16, 32, 64, 128],                      False),
-    TestCase("Advection-Polar",             [16, 32, 64, 128],                      False),
-    TestCase("Multigrid",                   [32, 64, 128, 512, 1024],               False),
-    TestCase("Multigrid-Spherical",         [16, 32, 64, 128, 256],                 False),
-    TestCase("Hill-Vortex",                 [16, 32, 64],                           False),
-    TestCase("ALE-Polar-Conservation",      [16, 32, 64, 128],                      False),
-    TestCase("ALE-Spherical-Conservation",  [16, 32, 64, 128],                      False),
-    TestCase("GCL",                         ["Cartesian", "Polar", "Spherical"],    False),
-    TestCase("Iterator",                    None,                                   True),
-    TestCase("Boundary",                    None,                                   False),
+    TestCase("Taylor-Green-MG",             [8, 16, 64],                                    False),
+    TestCase("Taylor-Green-FFT",            [8, 16, 64],                                    False),
+    TestCase("Channel-MG",                  [16, 32, 64],                                   False),
+    TestCase("Channel-FFT",                 [16, 32, 64],                                   False),
+    TestCase("Polar-Couette",               [8, 16, 32],                                    False),
+    TestCase("Polar-Channel",               [8, 16, 32, 64],                                False),
+    TestCase("Advection-Cartesian",         [16, 32, 64, 128],                              False),
+    TestCase("Advection-Polar",             [16, 32, 64, 128],                              False),
+    TestCase("Multigrid",                   [32, 64, 128, 512, 1024],                       False),
+    TestCase("Multigrid-Spherical",         [16, 32, 64, 128, 256],                         False),
+    TestCase("Hill-Vortex",                 [16, 32, 64],                                   False),
+    TestCase("ALE-Polar-Conservation",      [16, 32, 64, 128],                              False),
+    TestCase("ALE-Spherical-Conservation",  [16, 32, 64, 128],                              False),
+    TestCase("GCL",                         ["Cartesian", "Polar", "Symmetric-Spherical"],  False),
+    TestCase("Iterator",                    None,                                           True),
+    TestCase("Boundary",                    None,                                           False),
 ]
 
 
@@ -260,6 +265,14 @@ def dump_failed(results: Results):
         print(f"   stderr: {stderr_path}")
 
 
+def find_matching_tests(pattern: str) -> Set[TestCase]:
+    matches = set()
+    for test in ALL_TESTS:
+        if pattern in test.name:
+            matches.add(test)
+    return matches
+
+
 def parse_args(argv: Union[List[str], None] = None) -> Tuple[argparse.Namespace, List[TestCase]]:
     p = argparse.ArgumentParser(description="Build and run the test suite.")
     p.add_argument(
@@ -280,7 +293,7 @@ def parse_args(argv: Union[List[str], None] = None) -> Tuple[argparse.Namespace,
     p.add_argument(
             "case_names",
             nargs="*",
-            help="test cases to run, default is all test cases."
+            help="test cases to run, can match on substrings (default: all cases)"
     )
     args = p.parse_args(argv)
     if args.jobs < 1:
@@ -288,12 +301,13 @@ def parse_args(argv: Union[List[str], None] = None) -> Tuple[argparse.Namespace,
     if len(args.case_names) == 0:
         return args, ALL_TESTS
     else:
-        possible_case_names = [test.name for test in ALL_TESTS]
+        cases = set()
         for case_name in args.case_names:
-            if case_name not in possible_case_names:
-                p.error(f"Invalid case name `{case_name}`, possible choices are {', '.join(possible_case_names)}")
-        cases = [test for test in ALL_TESTS if test.name in args.case_names]
-        return args, cases
+            matches = find_matching_tests(case_name)
+            if len(matches) == 0:
+                p.error(f"Invalid case name or pattern `{case_name}`, test names are {', '.join([test.name for test in ALL_TESTS])}")
+            cases.update(matches)
+        return args, list(cases)
 
 
 def main():
