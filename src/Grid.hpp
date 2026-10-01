@@ -18,10 +18,13 @@
 #include "Metrics.hpp"
 
 #if defined(__clang__) || defined(__GNUC__)
+#define PALE_ALWAYS_INLINE __attribute__((always_inline))
 #define PALE_FOREACH_DEF __attribute__((flatten)) __attribute__((always_inline))
 #else
+#define PALE_ALWAYS_INLINE
 #define PALE_FOREACH_DEF
-#warning "PALE_FOREACH_DEF is not defined for this compiler; foreach kernels may not vectorize."
+#warning                                                                                           \
+    "PALE_ALWAYS_INLINE and PALE_FOREACH_DEF are not defined for this compiler; foreach kernels may not vectorize."
 #endif
 
 #define FOREACH_FUNC [=](Index i, Index j)
@@ -470,6 +473,20 @@ class Grid {
   }
 };
 
+// =================================================================================================
+template <typename Float, Layout LAYOUT, typename FUNC>
+PALE_ALWAYS_INLINE constexpr decltype(auto) dispatch_metric(const Grid<Float, LAYOUT>& grid,
+                                                            FUNC&& f) {
+  switch (grid.coords()) {
+    case Coordinates::CARTESIAN:           return f(Metric::Cartesian{});
+    case Coordinates::POLAR:               return f(Metric::Polar{});
+    case Coordinates::SYMMETRIC_SPHERICAL: return f(Metric::SymmetricSpherical{});
+  }
+  Igor::Panic("Unreachable");
+}
+#define DISPATCH_FUNC [&]<typename Metric>(Metric)
+
+// =================================================================================================
 template <typename Float, Layout LAYOUT = Layout::C>
 requires(std::is_trivially_constructible_v<Float> && std::is_trivially_destructible_v<Float>)
 class Scalar {
@@ -655,3 +672,21 @@ constexpr void fill(FaceVector<Float, LAYOUT> v, Float value) {
   fill(v.x, value);
   fill(v.y, value);
 }
+
+// =================================================================================================
+struct None {};
+template <typename T>
+concept IsNone = std::is_same_v<std::remove_cvref_t<T>, None>;
+
+template <typename T, typename Other>
+concept IsNoneOr = IsNone<T> || std::is_same_v<std::remove_cvref_t<T>, std::remove_cvref_t<Other>>;
+
+// NOLINTNEXTLINE
+#define If_NONE_ELSE(type, value_if_none, value_if_not_none)                                       \
+  [=] {                                                                                            \
+    if constexpr (IsNone<type>) {                                                                  \
+      return value_if_none;                                                                        \
+    } else {                                                                                       \
+      return value_if_not_none;                                                                    \
+    }                                                                                              \
+  }()

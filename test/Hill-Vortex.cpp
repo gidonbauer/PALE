@@ -189,7 +189,7 @@ auto main(int argc, char** argv) -> int {
 
   bool any_failed = false;
   IGOR_TIME_SCOPE("Hill-Vortex-" + std::to_string(N))
-  while (t < tend) {
+  while (t < tend && !any_failed) {
     dt = adjust_dt(grid, u, rho, mu, CFL);
     dt = std::min({dt, dt_write, tend - t});
 

@@ -183,9 +183,10 @@ auto main(int argc, char** argv) -> int {
       calc_div(grid, u, div);
       grid.foreach_i(FOREACH_FUNC { div(i, j) *= rho / local_dt; });
       if (!solver.solve(dp, div, 1e-3 / local_dt)) {
-        Igor::Warn("Multigrid solver did not converge after {} cycles: res = {:.8e}",
-                   solver.num_cycles(),
-                   solver.res());
+        Igor::Error("Multigrid solver did not converge after {} cycles: res = {:.8e}",
+                    solver.num_cycles(),
+                    solver.res());
+        any_failed = true;
       }
       mg_num_pre  = solver.num_iter_pre();
       mg_num_post = solver.num_iter_post();
