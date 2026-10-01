@@ -1,0 +1,6 @@
+*.ipynb
+*.pdf
+*.md
+*.typ
+build/
+figures/

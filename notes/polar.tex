@@ -1,0 +1,606 @@
+% !TeX program = latexmk --lualatex --interaction=nonstopmode --halt-on-error --output-directory=build --synctex=1
+
+\documentclass{article}
+\usepackage[a4paper, margin=30mm]{geometry}
+
+\usepackage[
+    colorlinks,
+    citecolor=black,
+    linkcolor=black,
+]{hyperref}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\numberwithin{equation}{section}
+
+\usepackage{cancel}
+\usepackage[
+    per-mode=fraction
+]{siunitx}
+
+\newcommand{\dd}{\mathrm{d}}
+\newcommand{\pd}[2]{\dfrac{\partial #1}{\partial #2}}
+
+\newcommand{\unitvec}[1]{\vec{e}_{#1}}
+
+% \renewcommand{\div}[1]{\text{div}\left(#1\right)}
+\renewcommand{\div}{\nabla \cdot}
+
+\setlength{\parindent}{0pt}
+
+\title{Navier--Stokes in Polar Coordinates and Rotationally Symmetric Spherical Coordinates}
+\author{Gidon Bauer}
+
+\begin{document}
+
+\include{rwthcolors.tex}
+
+\maketitle
+
+\section{Navier--Stokes Equations in Polar Coordinates}
+
+\begin{gather}
+    \pd{\vec{u}}{t} + \div \left[
+        \vec{u} \otimes \vec{u} +
+        \frac{p}{\rho} \mathbb{I} -
+        \frac{\mu}{\rho} \left(\nabla \vec{u} + \nabla \vec{u}^{\top}\right)
+    \right] = 0 \\
+    \div \vec{u} = 0
+\end{gather}
+
+\begin{center}
+    \def\arraystretch{2}
+    \begin{tabular}[]{|c|c|}
+        \hline
+        $x = r \cos(\theta)$ & $r = \sqrt{x^2 + y^2}$ \\
+        $y = r \sin(\theta)$ & $\theta = \arctan\left(\frac{y}{x}\right)$ \\
+        \hline
+        \hline
+        $\pd{x}{r} = \cos(\theta)$         & $\pd{r}{x} = \cos(\theta)$ \\
+        $\pd{x}{\theta} = -r \sin(\theta)$ & $\pd{r}{y} = \sin(\theta)$ \\
+        $\pd{y}{r} = \sin(\theta)$         & $\pd{\theta}{x} = -\frac{\sin(\theta)}{r}$ \\
+        $\pd{y}{\theta} = r \cos(\theta)$  & $\pd{\theta}{y} = \frac{\cos(\theta)}{r}$ \\
+        \hline
+    \end{tabular}
+\end{center}
+
+\begin{align*}
+        u_x = \cos(\theta) u_r - \sin(\theta) u_\theta \\
+        u_y = \sin(\theta) u_r + \cos(\theta) u_\theta \\
+\end{align*}
+
+\begin{align*}
+        u_x = \cos(\theta) u_r - \sin(\theta) u_\theta \\
+        u_y = \sin(\theta) u_r + \cos(\theta) u_\theta \\
+\end{align*}
+
+\begin{equation}
+    \div \vec{u}
+    = \pd{u_x}{x} + \pd{u_y}{y}
+    = \pd{u_r}{r} + \frac1r \pd{u_\theta}{\theta} + \frac{u_r}{r}
+\end{equation}
+
+\begin{equation}
+    \begin{aligned}
+        \nabla \vec{u}
+        &= \pd{u_x}{x} \unitvec{x} \otimes \unitvec{x} +
+          \pd{u_x}{y} \unitvec{x} \otimes \unitvec{y} +
+          \pd{u_y}{x} \unitvec{y} \otimes \unitvec{x} +
+          \pd{u_y}{y} \unitvec{y} \otimes \unitvec{y}
+        = \left(\begin{matrix}
+            \pd{u_x}{x} & \pd{u_x}{y} \\
+            \pd{u_y}{x} & \pd{u_y}{y} \\
+        \end{matrix}\right) \\
+        &=
+            \left(\frac1r \pd{u_\theta}{\theta} + \frac{u_r}{r}\right) \vec{e}_\theta \otimes \vec{e}_\theta +
+            \pd{u_\theta}{r} \vec{e}_\theta \otimes \unitvec{r} +
+            \left(\frac1r \pd{u_r}{\theta} - \frac{u_\theta}{r}\right) \unitvec{r} \otimes \vec{e}_\theta +
+            \pd{u_r}{r} \unitvec{r} \otimes \unitvec{r} \\
+        &= \left(\begin{matrix}
+            \dfrac1r \pd{u_\theta}{\theta} + \dfrac{u_r}{r} & \pd{u_\theta}{r} \\
+            \dfrac1r \pd{u_r}{\theta} - \dfrac{u_\theta}{r} & \pd{u_r}{r} \\
+        \end{matrix}\right) \\
+    \end{aligned}
+\end{equation}
+
+\begin{equation}
+    \begin{aligned}
+        \div T &=
+            \left(\pd{T_{xx}}{x} + \pd{T_{yx}}{y}\right) \unitvec{x} +
+            \left(\pd{T_{xy}}{x} + \pd{T_{yy}}{y}\right) \unitvec{y} \\
+        &=
+            \left(\frac1r \pd{T_{\theta \theta}}{\theta} + \pd{T_{r\theta}}{r} + \frac{T_{r\theta} + T_{\theta r}}{r}\right) \vec{e}_\theta +
+            \left(\frac1r \pd{T_{\theta r}}{\theta} + \pd{T_{rr}}{r} + \frac{T_{rr} - T_{\theta \theta}}{r}\right) \unitvec{r}
+    \end{aligned}
+\end{equation}
+
+\begin{align*}
+    T_{\theta \theta} &=
+    u_\theta^2
+    + \frac{p}{\rho}
+    - 2\frac{\mu}{\rho} \left(
+        \frac1r \pd{u_\theta}{\theta} + \frac{u_r}{r}
+    \right) \\
+    T_{r \theta} &= T_{\theta r} = u_r u_\theta - \frac{\mu}{\rho} \left(
+        \pd{u_\theta}{r} + \frac1r \pd{u_r}{\theta} - \frac{u_\theta}{r}
+    \right) \\
+    T_{rr} &= u_r^2 + \frac{p}{\rho} - 2\frac{\mu}{\rho} \pd{u_r}{r}
+\end{align*}
+
+\begin{equation}
+    \begin{aligned}
+        \pd{u_\theta}{t} &+
+        \frac1r \pd{}{\theta} \left[
+            u_\theta^2 +
+            \frac{p}{\rho} -
+            \frac{2\mu}{\rho} \left(\dfrac1r \pd{u_\theta}{\theta} + \dfrac{u_r}{r}\right)
+        \right] \\ &+
+        \pd{}{r} \left[
+            u_r u_\theta -
+            \frac{\mu}{\rho} \left(
+                \pd{u_\theta}{r} + \frac1r \pd{u_r}{\theta} - \frac{u_\theta}{r}
+            \right)
+        \right] \\ &+
+        \frac2r \left[
+            u_\theta u_r - \frac{\mu}{\rho}\left(\pd{u_\theta}{r} + \dfrac1r \pd{u_r}{\theta} - \dfrac{u_\theta}{r}\right)
+        \right]
+        = 0
+    \end{aligned}
+\end{equation}
+
+\begin{equation}
+    \pd{u_r}{r} + \frac1r \pd{u_\theta}{\theta} + \frac{u_r}{r} = 0
+\end{equation}
+
+\begin{equation}
+    \begin{aligned}
+        \Delta p &= \frac{\partial^2 p}{\partial x^2} + \frac{\partial^2 p}{\partial y^2} \\
+        &= \frac1r \pd{}{r} \left(r \pd{p}{r}\right) + \frac{1}{r^2} \frac{\partial^2 p}{\partial \theta^2} \\
+        &= \frac{\partial^2 p}{\partial r^2} +
+        \frac1r \pd{p}{r} +
+        \frac{1}{r^2} \frac{\partial^2 p}{\partial \theta^2}
+    \end{aligned}
+\end{equation}
+
+\begin{equation}
+    \pd{s}{t} + \nabla \cdot \left(s \vec{u} - D \nabla s\right) = 0
+\end{equation}
+
+\begin{equation}
+    \nabla s = \pd{s}{r} \unitvec{r} + \frac1r \pd{s}{\theta} \vec{e}_\theta
+\end{equation}
+
+\subsection{Couette Flow in Polar Coordinates}
+
+Assumptions:
+\begin{itemize}
+    \item $u_r = 0$
+    \item $\pd{}{\theta} = 0$
+    \item $\pd{}{t} = 0$
+    \item $\nu := \frac{\mu}{\rho}$
+\end{itemize}
+
+\begin{equation}
+    \begin{gathered}
+        \pd{}{r} \left[
+            -\nu \left(
+                \pd{u_\theta}{r} - \frac{u_\theta}{r}
+            \right)
+        \right] +
+        \frac2r \left[
+            -\nu \left(\pd{u_\theta}{r} - \dfrac{u_\theta}{r}\right)
+        \right]
+        = 0 \\
+        \Leftrightarrow
+        -\nu \frac{\partial^2 u_\theta}{\partial r^2}
+        +\nu \pd{}{r} \left(\frac{u_\theta}{r}\right)
+        - \frac{2\nu}{r} \pd{u_\theta}{r}
+        + \frac{2\nu}{r^2} u_\theta
+        = 0 \\
+        \Leftrightarrow
+        -\nu \frac{\partial^2 u_\theta}{\partial r^2}
+        +\frac{\nu}{r} \pd{u_\theta}{r}
+        -\frac{\nu}{r^2} u_\theta
+        - \frac{2\nu}{r} \pd{u_\theta}{r}
+        + \frac{2\nu}{r^2} u_\theta
+        = 0 \\
+        \Leftrightarrow
+        \frac{\partial^2 u_\theta}{\partial r^2}
+        -\frac{1}{r} \pd{u_\theta}{r}
+        +\frac{1}{r^2} u_\theta
+        +\frac{2}{r} \pd{u_\theta}{r}
+        -\frac{2}{r^2} u_\theta
+        = 0 \\
+        \Leftrightarrow
+        \frac{\partial^2 u_\theta}{\partial r^2}
+        +\frac{1}{r} \pd{u_\theta}{r}
+        -\frac{1}{r^2} u_\theta
+        = 0 \\
+    \end{gathered}
+\end{equation}
+
+\begin{equation}
+    u_\theta(r) = k_1 r + \frac{k_2}{r}
+\end{equation}
+
+Boundary conditions $u_\theta(1) = 1$ and $u_\theta(2) = 0$:
+\begin{gather*}
+    u_\theta(1) = k_1 + k_2 = 1 \\
+    u_\theta(2) = 2 k_1 + \frac12 k_2 = 0 \\
+    \Rightarrow k_1 = -\frac13, \quad k_2 = \frac43
+\end{gather*}
+
+\subsection{Channel Flow in Polar Coordinates}
+
+Assumptions:
+\begin{itemize}
+    \item $u_r = 0$
+    \item $\pd{}{t} = 0$
+    \item $\pd{p}{\theta} = \text{const.}$
+    \item $\pd{p}{r} = 0$
+    \item $\nu := \frac{\mu}{\rho}$
+\end{itemize}
+
+\begin{equation}
+    \div \vec{u} = \frac1r \pd{u_\theta}{\theta} = 0 \Rightarrow \pd{u_\theta}{\theta} = 0
+\end{equation}
+
+\begin{equation}
+    \begin{aligned}
+        &\frac1r \pd{}{\theta} \left[
+            u_\theta^2 +
+            \frac{p}{\rho}
+        \right] +
+        \pd{}{r} \left[
+            -\frac{\mu}{\rho} \left(
+                \pd{u_\theta}{r} - \frac{u_\theta}{r}
+            \right)
+        \right] +
+        \frac2r \left[
+            -\frac{\mu}{\rho}\left(\pd{u_\theta}{r} - \dfrac{u_\theta}{r}\right)
+        \right] = 0\\
+        \Leftrightarrow&\
+        \frac{1}{r} \pd{p}{\theta} +
+        \mu \left[
+            -\frac{\partial^2 u_\theta}{\partial r^2}
+            + \frac1r \pd{u_\theta}{r}
+            - \frac{u_\theta}{r^2}
+        \right] +
+        \mu
+        \left[
+            - \frac2r \pd{u_\theta}{r}
+            + 2 \dfrac{u_\theta}{r^2}
+        \right] = 0\\
+        \Leftrightarrow&\ 
+        \frac{\partial^2 u_\theta}{\partial r^2}
+        + \frac1r \pd{u_\theta}{r}
+        - \frac{u_\theta}{r^2}
+        = \frac{1}{\mu r} \pd{p}{\theta}
+    \end{aligned}
+\end{equation}
+
+\begin{equation}
+    u_\theta(r) = k_1r + \frac{k_2}{r} + \frac{1}{2\mu} \pd{p}{\theta} r \ln(r)
+\end{equation}
+
+\begin{equation}
+    \begin{split}
+        &u_\theta(1) = k_1 + k_2 = 0 \\
+        &u_\theta(2) = 2k_1 + \frac{k_2}{2} + \frac{1}{\mu} \pd{p}{\theta} \ln(2) = 0 \\
+        \Rightarrow &\ k_1 = k_2 = -\frac{4 \ln(2)}{5\mu} \pd{p}{\theta}
+    \end{split}
+\end{equation}
+
+\section{General Orthogonal Coordinates}
+
+\subsection{Operators 2D Orthogonal Coordinate System}
+
+The operators in an orthogonal coordinate system $(q_1, q_2)$ in two dimensions are:
+\begin{itemize}
+    \item Scalar gradient:
+    \begin{equation}
+        \nabla f
+        = \frac{\unitvec{1}}{h_1} \pd{f}{q_1}
+        + \frac{\unitvec{2}}{h_2} \pd{f}{q_2}
+    \end{equation}
+    \item Vector divergence:
+    \begin{equation}
+        \nabla \cdot \vec{F} =
+        \frac{1}{h_1 h_2} \left[
+              \pd{h_2 F_1}{q_1}
+            + \pd{h_1 F_2}{q_2}
+        \right]
+    \end{equation}
+    \item Scalar Laplacian:
+    \begin{equation}
+        \Delta f = 
+        \frac{1}{h_1 h_2} \left[
+            \pd{}{q_1} \left(\frac{h_2}{h_1} \pd{f}{q_1}\right)
+            + \pd{}{q_2} \left(\frac{h_1}{h_2} \pd{f}{q_2}\right)
+        \right]
+    \end{equation}
+    \item Vector gradient:
+    \begin{equation}
+        \nabla \vec{F} = \left(\begin{matrix}
+            \dfrac{1}{h_1} \pd{F_1}{q_1} + \dfrac{F_2}{h_1 h_2} \pd{h_1}{q_2} &
+            \dfrac{1}{h_1} \pd{F_2}{q_1} - \dfrac{F_1}{h_1 h_2} \pd{h_1}{q_2} \\
+            \dfrac{1}{h_2} \pd{F_1}{q_2} - \dfrac{F_2}{h_1 h_2} \pd{h_2}{q_1} &
+            \dfrac{1}{h_2} \pd{F_2}{q_2} + \dfrac{F_1}{h_1 h_2} \pd{h_2}{q_1} \\
+        \end{matrix}\right)
+    \end{equation}
+    \item Tensor divergence:
+    \begin{equation}
+        \nabla \cdot T = \left(\begin{matrix}
+            \dfrac{1}{h_1 h_2} \left[
+                \pd{h_2 T_{11}}{q_1}
+                + \pd{h_1 T_{21}}{q_2}
+                + T_{12} \pd{h_1}{q_2}
+                - T_{22} \pd{h_2}{q_1}
+            \right] \\
+            \dfrac{1}{h_1 h_2} \left[
+                \pd{h_2 T_{12}}{q_1}
+                + \pd{h_1 T_{22}}{q_2}
+                + T_{21} \pd{h_2}{q_1}
+                - T_{11} \pd{h_1}{q_2}
+            \right]
+        \end{matrix}\right)
+    \end{equation}
+\end{itemize}
+
+The flux term of the Navier--Stokes equation becomes
+\begin{equation}
+    \begin{gathered}
+        \vec{u} \otimes \vec{u} 
+        + \frac{p}{\rho} \mathbb{I}
+        - \nu \left(\nabla \vec{u} + \nabla \vec{u}^\top\right) = \\
+        \vec{u} \otimes \vec{u} 
+        + \frac{p}{\rho} \mathbb{I}
+        - \nu \left(\begin{matrix}
+            2 \left(\dfrac{1}{h_1} \pd{u_1}{q_1} + \dfrac{u_2}{h_1 h_2} \pd{h_1}{q_2}\right) &
+            \dfrac{1}{h_1} \pd{u_2}{q_1}
+            + \dfrac{1}{h_2} \pd{u_1}{q_2}
+            - \dfrac{u_1}{h_1 h_2} \pd{h_1}{q_2}
+            - \dfrac{u_2}{h_1 h_2} \pd{h_2}{q_1} \\
+            \dfrac{1}{h_1} \pd{u_2}{q_1}
+            + \dfrac{1}{h_2} \pd{u_1}{q_2}
+            - \dfrac{u_1}{h_1 h_2} \pd{h_1}{q_2}
+            - \dfrac{u_2}{h_1 h_2} \pd{h_2}{q_1} &
+            2 \left(\dfrac{1}{h_2} \pd{u_2}{q_2} + \dfrac{u_1}{h_1 h_2} \pd{h_2}{q_1}\right)
+        \end{matrix}\right)
+    \end{gathered}
+\end{equation}
+
+
+\subsection{Operators 3D Orthogonal Coordinate System}
+
+We have an orthogonal coordinate system $(q_1, q_2, q_3)$ in three dimensions with the metric $h_1$, $h_2$, $h_3$, and $H = h_1h_2h_3$.
+The operators are:
+\begin{itemize}
+    \item Scalar gradient:
+    \begin{equation}
+        \nabla f
+        = \frac{\unitvec{1}}{h_1} \pd{f}{q_1}
+        + \frac{\unitvec{2}}{h_2} \pd{f}{q_2}
+        + \frac{\unitvec{3}}{h_3} \pd{f}{q_3}
+    \end{equation}
+    \item Vector divergence:
+    \begin{equation}
+        \nabla \cdot \vec{F} =
+        \frac{1}{H} \left[
+              \pd{}{q_1} \left(\frac{H}{h_1} F_1\right)
+            + \pd{}{q_2} \left(\frac{H}{h_2} F_2\right)
+            + \pd{}{q_3} \left(\frac{H}{h_3} F_3\right)
+        \right]
+    \end{equation}
+    \item Scalar Laplacian:
+    \begin{equation}
+        \Delta f = 
+        \frac{1}{H} \left[
+              \pd{}{q_1} \left(\frac{H}{h_1^2} \pd{f}{q_1}\right)
+            + \pd{}{q_2} \left(\frac{H}{h_2^2} \pd{f}{q_2}\right)
+            + \pd{}{q_3} \left(\frac{H}{h_3^2} \pd{f}{q_3}\right)
+        \right]
+    \end{equation}
+    \item Vector gradient:
+    \begin{equation}
+        \begin{split}
+            \left(\nabla \vec{F}\right)_{ij} &=
+            \frac{1}{h_i} \pd{F_j}{q_i} - \frac{F_i}{h_i h_j} \pd{h_i}{q_j}, \quad i \ne j \\
+            \left(\nabla \vec{F}\right)_{ii} &=
+            \frac{1}{h_i} \pd{F_i}{q_i} + \sum_{k \ne i} \frac{F_k}{h_i h_k} \pd{h_i}{q_k}
+        \end{split}
+    \end{equation}
+    \begin{equation}
+        \nabla \vec{u} = \left(\begin{matrix}
+            \dfrac{1}{h_1} \pd{u_1}{q_1} +
+            \dfrac{u_2}{h_1 h_2} \pd{h_1}{q_2} +
+            \dfrac{u_3}{h_1 h_3} \pd{h_1}{q_3} & 
+            \dfrac{1}{h_1} \pd{u_2}{q_1} - \dfrac{u_1}{h_1 h_2} \pd{h_1}{q_2} &
+            \dfrac{1}{h_1} \pd{u_3}{q_1} - \dfrac{u_1}{h_1 h_3} \pd{h_1}{q_3} \\
+            \dfrac{1}{h_2} \pd{u_1}{q_2} - \dfrac{u_2}{h_2 h_1} \pd{h_2}{q_1} &
+            \dfrac{1}{h_2} \pd{u_2}{q_2} +
+            \dfrac{u_1}{h_2 h_1} \pd{h_2}{q_1} +
+            \dfrac{u_3}{h_2 h_3} \pd{h_2}{q_3} &
+            \dfrac{1}{h_2} \pd{u_3}{q_2} - \dfrac{u_2}{h_2 h_3} \pd{h_2}{q_3} \\
+            \dfrac{1}{h_3} \pd{u_1}{q_3} - \dfrac{u_3}{h_3 h_1} \pd{h_3}{q_1} &
+            \dfrac{1}{h_3} \pd{u_2}{q_3} - \dfrac{u_3}{h_3 h_2} \pd{h_3}{q_2} &
+            \dfrac{1}{h_3} \pd{u_3}{q_3} +
+            \dfrac{u_2}{h_3 h_2} \pd{h_3}{q_2} +
+            \dfrac{u_3}{h_3 h_3} \pd{h_3}{q_3}
+        \end{matrix}\right)
+    \end{equation}
+    \item Tensor divergence:
+    \begin{equation}
+        T = \left(\begin{matrix}
+            T_{11} & T_{12} & T_{13} \\
+            T_{21} & T_{22} & T_{23} \\
+            T_{31} & T_{32} & T_{33} \\
+        \end{matrix}\right)
+    \end{equation}
+    \begin{equation}
+        \left(\nabla \cdot T\right)_j =
+        \frac{1}{H} \sum_i \pd{}{q_i} \left(
+            \frac{H}{h_i} T_{ij}
+        \right) + 
+        \sum_{i \ne j} \left(
+            \frac{T_{ji}}{h_ih_j} \pd{h_j}{q_i} -
+            \frac{T_{ii}}{h_ih_j} \pd{h_i}{q_j}
+        \right)
+    \end{equation}
+    \begin{equation}
+        \begin{split}
+            \left(\nabla \cdot T\right)_1 =
+            &\frac{1}{H} \left[
+                  \pd{}{q_1} \left(\frac{H}{h_1} T_{11}\right)
+                + \pd{}{q_2} \left(\frac{H}{h_2} T_{21}\right)
+                + \pd{}{q_3} \left(\frac{H}{h_3} T_{31}\right)
+            \right] + \\
+            &\left(
+                \frac{T_{12}}{h_2h_1} \pd{h_1}{q_2} -
+                \frac{T_{22}}{h_2h_1} \pd{h_2}{q_1}
+            \right) +
+            \left(
+                \frac{T_{13}}{h_3h_1} \pd{h_1}{q_3} -
+                \frac{T_{33}}{h_3h_1} \pd{h_3}{q_1}
+            \right)
+        \end{split}
+    \end{equation}
+\end{itemize}
+
+The flux term of the Navier--Stokes equation becomes
+\begin{equation}
+    \vec{u} \otimes \vec{u} 
+    + \frac{p}{\rho} \mathbb{I}
+    - \nu \left(\nabla \vec{u} + \nabla \vec{u}^\top\right)
+\end{equation}
+
+\subsubsection{Symmetry in Thrid Dimension}
+
+For symmetry in the third dimension, we assume $\frac{\partial (\cdot)}{\partial q_3} = 0$ and  $u_3 = 0$.
+We then have the following operators:
+\begin{itemize}
+    \item Scalar gradient:
+    \begin{equation}
+        \nabla f
+        = \frac{\unitvec{1}}{h_1} \pd{f}{q_1}
+        + \frac{\unitvec{2}}{h_2} \pd{f}{q_2}
+    \end{equation}
+    \item Vector divergence:
+    \begin{equation}
+        \nabla \cdot \vec{F} =
+        \frac{1}{H} \left[
+              \pd{}{q_1} \left(\frac{H}{h_1} F_1\right)
+            + \pd{}{q_2} \left(\frac{H}{h_2} F_2\right)
+        \right]
+    \end{equation}
+    \item Scalar Laplacian:
+    \begin{equation}
+        \Delta f = 
+        \frac{1}{H} \left[
+              \pd{}{q_1} \left(\frac{H}{h_1^2} \pd{f}{q_1}\right)
+            + \pd{}{q_2} \left(\frac{H}{h_2^2} \pd{f}{q_2}\right)
+        \right]
+    \end{equation}
+    \item Vector gradient:
+    \begin{equation}
+        \begin{split}
+            \left(\nabla \vec{F}\right)_{ij} &=
+            \frac{1}{h_i} \pd{F_j}{q_i} - \frac{F_i}{h_i h_j} \pd{h_i}{q_j}, \quad i \ne j \\
+            \left(\nabla \vec{F}\right)_{ii} &=
+            \frac{1}{h_i} \pd{F_i}{q_i} + \sum_{k \ne i} \frac{F_k}{h_i h_k} \pd{h_i}{q_k}
+        \end{split}
+    \end{equation}
+    \begin{equation}
+        \nabla \vec{u} = \left(\begin{matrix}
+            \dfrac{1}{h_1} \pd{u_1}{q_1} +
+            \dfrac{u_2}{h_1 h_2} \pd{h_1}{q_2} & 
+            \dfrac{1}{h_1} \pd{u_2}{q_1} - \dfrac{u_1}{h_1 h_2} \pd{h_1}{q_2} &
+            \textcolor{RWTHRot100}{0} \\
+            \dfrac{1}{h_2} \pd{u_1}{q_2} - \dfrac{u_2}{h_2 h_1} \pd{h_2}{q_1} &
+            \dfrac{1}{h_2} \pd{u_2}{q_2} +
+            \dfrac{u_1}{h_2 h_1} \pd{h_2}{q_1} &
+            \textcolor{RWTHRot100}{0} \\
+            \textcolor{RWTHRot100}{0} &
+            \textcolor{RWTHRot100}{0} &
+            \textcolor{RWTHRot100}{
+                \dfrac{u_1}{h_3 h_1} \pd{h_3}{q_1} +
+                \dfrac{u_2}{h_3 h_2} \pd{h_3}{q_2}
+            }
+        \end{matrix}\right)
+    \end{equation}
+    \item Tensor divergence:
+    \begin{equation}
+        T = \left(\begin{matrix}
+            T_{11} & T_{12} & T_{13} \\
+            T_{21} & T_{22} & T_{23} \\
+            T_{31} & T_{32} & T_{33} \\
+        \end{matrix}\right)
+    \end{equation}
+    \begin{equation}
+        \left(\nabla \cdot T\right)_j =
+        \frac{1}{H} \sum_i \pd{}{q_i} \left(
+            \frac{H}{h_i} T_{ij}
+        \right) + 
+        \sum_{i \ne j} \left(
+            \frac{T_{ji}}{h_ih_j} \pd{h_j}{q_i} -
+            \frac{T_{ii}}{h_ih_j} \pd{h_i}{q_j}
+        \right)
+    \end{equation}
+    \begin{equation}
+        \begin{split}
+            \left(\nabla \cdot T\right)_1 &=
+            \frac{1}{H} \left[
+                  \pd{}{q_1} \left(\frac{H}{h_1} T_{11}\right)
+                + \pd{}{q_2} \left(\frac{H}{h_2} T_{21}\right)
+            \right] \\
+            &+ \left(
+                \frac{T_{12}}{h_2h_1} \pd{h_1}{q_2} -
+                \frac{T_{22}}{h_2h_1} \pd{h_2}{q_1}
+            \right) \\
+            &- \textcolor{RWTHRot100}{
+                \frac{T_{33}}{h_3h_1} \pd{h_3}{q_1}
+            }
+        \end{split}
+    \end{equation}
+    \begin{equation}
+        \begin{split}
+            \left(\nabla \cdot T\right)_2 &=
+            \frac{1}{H} \left[
+                  \pd{}{q_1} \left(\frac{H}{h_1} T_{12}\right)
+                + \pd{}{q_2} \left(\frac{H}{h_2} T_{22}\right)
+            \right] \\
+            &+ \left(
+                \frac{T_{21}}{h_1h_2} \pd{h_2}{q_1} -
+                \frac{T_{11}}{h_1h_2} \pd{h_1}{q_2}
+            \right) \\
+            &- \textcolor{RWTHRot100}{
+                \frac{T_{33}}{h_3h_2} \pd{h_3}{q_2}
+            }
+        \end{split}
+    \end{equation}
+\end{itemize}
+
+\subsection{Metrics for Common Coordinate Systems}
+
+\begin{itemize}
+    \item Cartesian:
+    \begin{align*}
+        &h_1 = h_x = 1 \\
+        &h_2 = h_y = 1 \\
+        &h_3 = h_z = 1
+    \end{align*}
+    \item Polar:
+    \begin{align*}
+        &h_1 = h_\theta = r \\
+        &h_2 = h_r = 1 \\
+        &h_3 = h_\phi = 1
+    \end{align*}
+    \item Spherical:
+    \begin{align*}
+        &h_1 = h_\theta = r \\
+        &h_2 = h_r = 1 \\
+        &h_3 = h_\phi = r \sin(\theta)
+    \end{align*}
+\end{itemize}
+
+\end{document}

@@ -1,0 +1,577 @@
+% !TeX program = latexmk --lualatex --interaction=nonstopmode --halt-on-error --output-directory=build --synctex=1
+
+\documentclass{article}
+\usepackage[a4paper, margin=30mm]{geometry}
+
+\usepackage[
+    colorlinks,
+    citecolor=black,
+    linkcolor=black,
+]{hyperref}
+\usepackage[
+  style=numeric,
+  doi=true, isbn=false, url=false, eprint=false,
+  date=year,% print only the year, not the month
+]{biblatex}
+\addbibresource{references.bib}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{cancel}
+\usepackage[
+    per-mode=fraction
+]{siunitx}
+\usepackage{tikz}
+
+\newcommand{\dd}{\mathrm{d}}
+\newcommand{\DD}{\mathrm{D}}
+\newcommand{\pd}[2]{\dfrac{\partial #1}{\partial #2}}
+\newcommand{\pdsnd}[2]{\dfrac{\partial^2 #1}{\partial #2^2}}
+% \newcommand{\pd}[2]{\partial_{#2} #1}
+
+\setlength{\parindent}{0pt}
+
+\title{Arbitrary Lagrangian--Eulerian Method}
+\author{Gidon Bauer}
+
+\begin{document}
+
+\maketitle
+
+\section{Eulerian Formulation of Incompressible Navier--Stokes}
+
+The incompressible Navier--Stokes equations in convective form are
+\begin{equation}
+    \nabla \cdot \vec{u} = 0
+    \label{eq:continuity}
+\end{equation}
+\begin{equation}
+    \pd{\vec{u}}{t} +
+    \left(\vec{u} \cdot \nabla\right) \vec{u} +
+    \frac{1}{\rho} \nabla p -
+    \nu \Delta \vec{u} =
+    \vec{f}
+    \label{eq:navier-stokes-convective}
+\end{equation}
+where $\vec{u}$ is the velocity, $\rho$ the mass density, $p$ the pressure, $\nu$ the kinematic viscosity, and $\vec{f}$ an arbitrary momentum source.
+This is supplemented by the conservation of an advected and diffused scalar
+\begin{equation}
+    \pd{s}{t} + \vec{u} \cdot \nabla s - D \Delta s = S
+    \label{eq:advection-diffusion-convective}
+\end{equation}
+with conserved scalar $s$, diffusion coefficient $D$, and source term $S$.
+
+Eq. \eqref{eq:navier-stokes-convective} can be written in conservative form as
+\begin{equation}
+    \pd{\vec{u}}{t} + \nabla \cdot \left[
+        \vec{u} \otimes \vec{u} +
+        \frac{1}{\rho} p \mathbb{I} -
+        \nu \left(\nabla \vec{u} + \nabla \vec{u}^\top\right)
+    \right] = \vec{f},
+    \label{eq:navier-stokes-conservative}
+\end{equation}
+as can Eq. \eqref{eq:advection-diffusion-convective}
+\begin{equation}
+    \pd{s}{t} + \nabla \cdot \left(s\vec{u} - D \nabla s\right) = S.
+    \label{eq:advection-diffusion-conservative}
+\end{equation}
+The conservative form is preferred for numerical implementation, because the conservation is fulfilled up to machine precision.
+
+\section{ALE Formulation of Incompressible Navier--Stokes}
+
+In the ALE view, we do the calculations on a moving computational grid and not on a stationary one as in the Eulerian view.
+The continuity equation Eq. \eqref{eq:continuity} is the same for both views.
+The conservation of momentum Eq. \eqref{eq:navier-stokes-convective} changes to \cite{doneaArbitraryAgrangianUlerian2004}
+\begin{equation}
+    \pd{\vec{u}}{t}\bigg|_\chi +
+    \left(\vec{c} \cdot \nabla\right) \vec{u} +
+    \frac{1}{\rho} \nabla p -
+    \nu \Delta \vec{u} =
+    \vec{f}.
+    \label{eq:ale-navier-stokes-convective}
+\end{equation}
+The difference of this equation to Eq. \eqref{eq:navier-stokes-convective} is that the velocity is advected with the relative velocity $\vec{c} = \vec{u} - \vec{w}$, where $\vec{w}$ is the grid velocity and
+that the time-derivative is evaluated in the computational domain.
+The other operators have to be evaluated in the spatial domain as for the Eulerian view.
+This becomes more challenging when the mesh deforms.
+
+The conservation of a scalar Eq. \eqref{eq:advection-diffusion-convective} becomes in the ALE view
+\begin{equation}
+    \pd{s}{t}\bigg|_\chi + \vec{c} \cdot \nabla s - D \Delta s = S.
+    \label{eq:ale-advection-diffusion-convective}
+\end{equation}
+Also here, the time-derivative is evaluated in the computational domain and the scalar is advected with the relative velocity.
+
+\subsection{Naïve Flux-Based Formulation}
+Eq. \eqref{eq:ale-navier-stokes-convective} can also be written in a flux-based form
+\begin{equation}
+    \pd{\vec{u}}{t}\bigg|_\chi + \nabla \cdot \left[
+        \vec{c} \otimes \vec{u} +
+        \frac{1}{\rho} p \mathbb{I} -
+        \nu \left(\nabla \vec{u} + \nabla \vec{u}^\top\right)
+    \right] = \vec{f} - \vec{u} \left(\nabla \cdot \vec{w}\right).
+\end{equation}
+This introduces a new source term into the equation due to
+\begin{equation*}
+    \nabla \cdot \left(\vec{c} \otimes \vec{u}\right) =
+    \left(\vec{c} \cdot \nabla\right) \vec{u} +
+    \vec{u} \left(\nabla \cdot \vec{c}\right),
+\end{equation*}
+\begin{equation*}
+    \nabla \cdot \vec{c} =
+    \nabla \cdot \left(\vec{u} - \vec{w}\right) =
+    -\nabla \cdot \vec{w},
+\end{equation*}
+and finally
+\begin{equation*}
+    \left(\vec{c} \cdot \nabla\right) \vec{u} =
+    \nabla \cdot \left(\vec{c} \otimes \vec{u}\right) +
+    \vec{u} \left(\nabla \cdot \vec{w}\right).
+\end{equation*}
+The new source is due to the volume change of the individual cells that occurs when the grid velocity is not divergence-free, i.e. $\nabla \cdot \vec{w} \ne 0$.
+
+The same can be done for Eq. \eqref{eq:ale-advection-diffusion-convective}
+\begin{equation}
+    \pd{s}{t}\bigg|_\chi + \nabla \cdot \left(
+        s \vec{c} -
+        D \nabla s
+    \right) = S - s \left(\nabla \cdot \vec{w}\right).
+\end{equation}
+
+These formulations are similar to the conservative forms Eq. \eqref{eq:navier-stokes-conservative} and \eqref{eq:advection-diffusion-conservative} but they do not conserve discretely due to the new source terms.
+
+\subsection{Conservative Form via the Geometric Conservation Law}
+
+The discrete conservative properties can be recovered by introducing the geometric conservation law \cite{thomasGeometricConservationLaw1979}
+\begin{equation}
+    \frac{\dd}{\dd t} \int_\Omega J \dd V_\chi = \int_\Omega \left(\nabla \cdot \vec{w}\right) J \dd V_\chi
+\end{equation}
+with $\dd V = \dd x \dd y \dd z = J \dd \xi \dd \eta \dd \zeta = J \dd V_\chi$ and
+$J = \pd{(x, y, z)}{(\xi, \eta, \zeta)}$ being the Jacobian of the transformation.
+This can be written in differential form as
+\begin{equation}
+    \pd{J}{t}\bigg|_\chi - J \nabla \cdot \vec{w} = 0.
+    \label{eq:geometric-conservation-law}
+\end{equation}
+
+With this, we can modify Eq. \eqref{eq:ale-navier-stokes-convective}
+\begin{equation}
+    \begin{split}
+        \pd{J\vec{u}}{t}\bigg|_\chi =
+        J\pd{\vec{u}}{t}\bigg|_\chi + \vec{u}\pd{J}{t}\bigg|_\chi &=
+        J \left[
+            - \left(\vec{c} \cdot \nabla\right) \vec{u}
+            - \frac{1}{\rho} \nabla p
+            + \nu \Delta \vec{u}
+            + \vec{f}
+        \right] +
+        J \vec{u} \left(\nabla \cdot \vec{w}\right) \\
+        &=
+        J \left[
+            - \nabla \cdot \left(\vec{c} \otimes \vec{u}\right)
+            - \frac{1}{\rho} \nabla p
+            + \nu \Delta \vec{u}
+            + \vec{f}
+        \right] \\
+        &=
+        -J \nabla \cdot \left[
+            \vec{c} \otimes \vec{u}
+            + \frac{1}{\rho} p \mathbb{I}
+            - \nu \left(\nabla \vec{u} + \nabla \vec{u}^\top\right)
+        \right]
+        + J \vec{f}.
+    \end{split}
+\end{equation}
+
+In the discrete case we can then use the following first order update rule
+\begin{equation}
+    % \begin{split}
+    %     &J^{n+1} \vec{u}^{n+1} =
+    %     J^{n} \vec{u}^{n} -
+    %     \Delta t \left\{
+    %         J^{n} \nabla \cdot \left[
+    %             \vec{c} \otimes \vec{u}
+    %             + \frac{1}{\rho} p \mathbb{I}
+    %             - \nu \left(\nabla \vec{u} + \nabla \vec{u}^\top\right)
+    %         \right]^{n} -
+    %         J^{n} \vec{f}^{n}
+    %     \right\} \\
+    %     \Rightarrow\ &
+        \vec{u}^{n+1} =
+        \frac{1}{J^{n+1}} \left(
+            J^{n} \vec{u}^{n} -
+            \Delta t \left\{
+                J^{n} \nabla \cdot \left[
+                    \vec{c} \otimes \vec{u}
+                    + \frac{1}{\rho} p \mathbb{I}
+                    - \nu \left(\nabla \vec{u} + \nabla \vec{u}^\top\right)
+                \right]^{n} -
+                J^{n} \vec{f}^{n}
+            \right\}
+        \right)
+    % \end{split}
+\end{equation}
+or alternatively the second order update rule
+\begin{equation}
+    \begin{split}
+        &\vec{u}^{n+\tfrac12} =
+        \frac{1}{J^{n+\tfrac12}} \left(
+            J^{n} \vec{u}^{n} -
+            \frac{\Delta t}{2} \left\{
+                J^{n} \nabla \cdot \left[
+                    \vec{c} \otimes \vec{u}
+                    + \frac{1}{\rho} p \mathbb{I}
+                    - \nu \left(\nabla \vec{u} + \nabla \vec{u}^\top\right)
+                \right]^{n} -
+                J^{n} \vec{f}^{n}
+            \right\}
+        \right) \\
+        &\vec{u}^{n+1} =
+        \frac{1}{J^{n+1}} \left(
+            J^{n} \vec{u}^{n} -
+            \Delta t \left\{
+                J^{n+\tfrac12} \nabla \cdot \left[
+                    \vec{c} \otimes \vec{u}
+                    + \frac{1}{\rho} p \mathbb{I}
+                    - \nu \left(\nabla \vec{u} + \nabla \vec{u}^\top\right)
+                \right]^{n+\tfrac12} -
+                J^{n+\tfrac12} \vec{f}^{n+\tfrac12}
+            \right\}
+        \right).
+    \end{split}
+\end{equation}
+Note that both require a Poisson equation for the pressure that is not shown here.
+
+The same can be done for Eq. \eqref{eq:ale-advection-diffusion-convective}
+\begin{equation}
+    \begin{split}
+        \pd{Js}{t}\bigg|_\chi =
+        J \pd{s}{t}\bigg|_\chi + s \pd{J}{t}\bigg|_\chi &=
+        J \left[-\vec{c} \cdot \nabla s + D \Delta s + S\right]
+        + J s \left(\nabla \cdot \vec{w}\right) \\
+        &= J \left[
+            - \nabla \cdot \left(s \vec{c}\right)
+            + D \Delta s
+            + S
+        \right] \\
+        &= -J \nabla \cdot \left(s \vec{c} - D \nabla s\right) + JS
+    \end{split}
+\end{equation}
+and we get the same procedure for the first order update rule
+\begin{equation}
+    s^{n+1} =
+    \frac{1}{J^{n+1}} \left\{
+        J^n s^n
+        - \Delta t \left[
+            J^n \nabla \cdot \left(s \vec{c} - D \nabla s\right)^n
+            - J^n S^n
+        \right]
+    \right\}
+\end{equation}
+and the second order update rule
+\begin{equation}
+    \begin{split}
+        &s^{n+\tfrac12} =
+        \frac{1}{J^{n+\tfrac12}} \left\{
+            J^n s^n
+            - \frac{\Delta t}{2} \left[
+                J^n \nabla \cdot \left(s \vec{c} - D \nabla s\right)^n
+                - J^n S^n
+            \right]
+        \right\} \\
+        &s^{n+1} =
+        \frac{1}{J^{n+1}} \left\{
+            J^n s^n
+            - \Delta t \left[
+                J^{n+\tfrac12} \nabla \cdot \left(s \vec{c} - D \nabla s\right)^{n+\tfrac12}
+                - J^{n+\tfrac12} S^{n+\tfrac12}
+            \right]
+        \right\}.
+    \end{split}
+\end{equation}
+
+The geometric conservation law has to be discretized in the same way as the other conservation equations for the truncation errors to cancel.
+
+% % = Description of Motion ==========================================================================
+% \section{Description of Motion}
+
+% The arbitrary Lagrangian--Eulerian (ALE) method couples Lagrangian methods,
+% in which the grid moves with the flow and is deformed, with Eulerian methods,
+% in which the grid is constant in time.
+% The nodes in the ALE method can be moved with an arbitrary velocity \cite{doneaArbitraryAgrangianUlerian2004}.
+
+% We have three different domains:
+% \begin{enumerate}
+%     \item The material domain with coordinates $\vec{X}$,
+%     \item the spatial domain with coordinates $\vec{x}$, and
+%     \item the computational domain with coordinates $\vec{\chi}$.
+% \end{enumerate}
+
+% \begin{figure}[ht]
+%     \centering
+%     \input{figures/material-and-spatial-domain.tikz}
+%     \caption{Material and spatial domain and their connection through $\varphi$}
+%     \label{fig:material-spatial-domain}
+% \end{figure}
+
+% A material point with initial position $\vec{X}$ at $t_0$ will be at point $\vec{x}$ after the transformation $\varphi$.
+
+% \subsection{Lagrangian and Eulerian View}
+
+% In the Lagrangian view, we follow the particles from the initial time:
+% \begin{equation}
+%     \vec{x}(t) = \varphi(\vec{X}, t).
+%     \label{eq:material-to-spatial}
+% \end{equation}
+% We have the particle velocity and acceleration
+% \begin{equation}
+%     \vec{v} = \pd{\varphi}{t}(\vec{X}, t) \quad \text{and} \quad
+%     \vec{a} = \pdsnd{\varphi}{t}(\vec{X}, t).
+% \end{equation}
+% The motion is described by the trajectory of the particles \cite{temamMathematicalModeling2005}.
+% In the Lagrangian description, there are no convective contributions.
+% This means that the material derivative reduces to a time derivative.
+
+% In the Eulerian view, we have the velocity $\vec{u}(x,t)$.
+% At each time, $\vec{u}(x,t)$ is the velocity of the particles occupying the position $\vec{x}$.
+% The description of the motion is via the velocity field \cite{temamMathematicalModeling2005}.
+
+% \subsubsection{Derivatives}
+
+% We have a particle $\mathcal{P}$ that occupies at time $t_0$ the position $\vec{X}$ and at time $t$ the position $\vec{x}$ is associated with a quantity $f(\mathcal{P}, t)$.
+% The function $f$ can be represented in the Lagrangian way by
+% \begin{equation}
+%     f(\mathcal{P}, t) = g(\vec{X}, t)
+% \end{equation}
+% or the Eulerian way by
+% \begin{equation}
+%     f(\mathcal{P}, t) = h(\vec{x}, t).
+% \end{equation}
+% The two froms are connected via Eq. \eqref{eq:material-to-spatial}.
+% \begin{equation}
+%     g(\vec{X}, t) = h(\varphi(\vec{X}, t), t)
+%     \label{eq:function-lagrangian-eulerian}
+% \end{equation}
+
+% We then define the Eulerian derivatives
+% \begin{equation}
+%     \pd{h}{x_i}(\vec{x}, t) \quad \text{and} \quad \pd{h}{t}(\vec{x}, t)
+% \end{equation}
+% and the Lagrangian derivatives
+% \begin{equation}
+%     \pd{g}{X_i}(\vec{X}, t) \quad \text{and} \quad \pd{g}{t}(\vec{X}, t).
+% \end{equation}
+% The derivative $\pd{g}{t}(\vec{X}, t)$ corresponds to the total derivative $\frac{\DD h}{\DD t}$ \cite{temamMathematicalModeling2005}.
+
+% Via Eq. \eqref{eq:function-lagrangian-eulerian}, we can deduce two properties:
+% \begin{enumerate}
+%     \item
+%     \begin{equation}
+%         \pd{g}{X_i}(\vec{X}, t) =
+%         % \pd{h(\varphi(\vec{X}, t), t)}{X_i}(\vec{X}, t) =
+%         \pd{h(\vec{x}, t)}{x_i}(\vec{x}, t) \cdot \pd{\varphi(\vec{X}, t)}{X_i}(\vec{X}, t)
+%     \end{equation}
+%     \item
+%     \begin{equation}
+%         \begin{split}
+%             \pd{g}{t} = \frac{\DD h}{\DD t} &= 
+%             % \pd{h(\varphi(\vec{X}, t), t)}{t}(\vec{X}, t) =
+%             \pd{h(\vec{x}, t)}{t} +
+%             \pd{h(\vec{x}, t)}{x_i} \cdot \pd{\varphi(\vec{X}, t)}{t} \\
+%             &= \pd{h(\vec{x}, t)}{t} + \pd{h(\vec{x}, t)}{x_i} \cdot u_i
+%         \end{split}
+%     \end{equation}
+% \end{enumerate}
+
+% \subsection{ALE view}
+
+% In the ALE description neither the material configuration nor the spatial configuration are chosen \cite{doneaArbitraryAgrangianUlerian2004}.
+% Instead we chose a computational configuration $R_{\vec{\chi}}$.
+% This domain moves independently from the material motion and
+% can be mapped to both the material and spatial configuration via $\psi$ and $\Phi$.
+% \begin{figure}[ht]
+%     \centering
+%     \begin{tikzpicture}[>=stealth]
+%         \begin{scope}[every node/.style={draw, circle, align=center, minimum size=2cm}]
+%             \node (material) at (0, 2.5) {Material:\\$R_{\vec{X}}$};
+%             \node (spatial)  at (5, 2.5) {Spatial:\\$R_{\vec{x}}$};
+%             \node (comp)     at (2.5, 0) {Comp.:\\$R_{\vec{\chi}}$};
+%         \end{scope}
+%         \draw[->] (material) -- (spatial) node[midway, above] {$\varphi$};
+%         \draw[->] (comp) -- (spatial) node[midway, above] {$\Phi$};
+%         \draw[->] (comp) -- (material) node[midway, above] {$\psi$};
+%     \end{tikzpicture}
+%     \caption{Mappings from and to different configurations.}
+%     \label{fig:mappings}
+% \end{figure}
+% In Fig. \ref{fig:mappings} we can clearly see that the particle motion can be expressed as
+% \begin{equation}
+%     \varphi = \Phi \circ \psi^{-1}
+% \end{equation}
+% and the mappings are therefore not independent.
+
+% The mapping from the computational to the spatial domain $\Phi$ can be understood as the motion of the grid points in the spatial domain.
+% \begin{equation}
+%     \begin{gathered}
+%         \Phi: R_{\vec{\chi}} \times [0, T) \to R_{\vec{x}} \times [0, T) \\
+%         (\vec{\chi}, t) \mapsto \Phi(\vec{\chi}, t) = (\vec{x}, t) \\
+%     \end{gathered}
+% \end{equation}
+% Then the grid velocity is
+% \begin{equation}
+%     \vec{\hat{v}}(\vec{\chi}, t) = \pd{\vec{x}}{t}\bigg|_{\vec{\chi}}.
+% \end{equation}
+
+% The mapping $\psi^{-1}$ transforms the material domain into the computational domain
+% \begin{equation}
+%     \begin{gathered}
+%         \psi^{-1}: R_{\vec{X}} \times [0, T) \to R_{\vec{\chi}} \times [0, T) \\
+%         (\vec{X}, t) \mapsto \Phi(\vec{X}, t) = (\vec{\chi}, t) \\
+%     \end{gathered}
+% \end{equation}
+% with corresponding velocity
+% \begin{equation}
+%     \vec{w} = \pd{\chi}{t}\bigg|_{\vec{X}}
+% \end{equation}
+% which can be interpreted as the particle velocity in the computational domain.  
+
+% Together this yields
+% \begin{equation}
+%     \vec{v} = \vec{\hat{v}} + \pd{\vec{x}}{\vec{\chi}} \vec{w}
+% \end{equation}
+% with the convective velocity
+% \begin{equation}
+%     \vec{c} := \vec{v} - \vec{\hat{v}} = \pd{\vec{x}}{\vec{\chi}} \vec{w}.
+% \end{equation}
+
+% % = Equations in the ALE Formulation ===================================================================
+% \section{Equations in the ALE Formulation}
+
+% The equation in the spatial domain
+% \begin{equation}
+%     \pd{q}{t} + \nabla_{\vec{x}} \cdot \vec{f}(q) = 0
+% \end{equation}
+% becomes in ALE formulation
+% \begin{equation}
+%     \pd{J q}{t} + \nabla_{\vec{\chi}} \cdot \left[
+%         J A^{-1} \left(\vec{f}(q) - q \vec{w}\right)
+%     \right] = 0.
+%     \label{eq:general_ale_pde}
+% \end{equation}
+% The flux $\vec{f}(q)$ must be evaluated in the spatial domain, this has a few implications, for example
+% \begin{itemize}
+%     \item The derivative in the diffusive flux must account for possible grid rotation.
+%     \item Radius appearing in the polar operators must be the correctly move one.
+% \end{itemize}
+% The vector $\vec{w}$ is the mesh velocity,
+% $A = \pd{\vec{x}}{\vec{\chi}}$ is the Jacobian matrix of the deformation and
+% $J = \det(A)$ its determinant.
+% In two dimensions, factor inside the flux of Eq. \eqref{eq:general_ale_pde} is
+% \begin{equation}
+%     JA^{-1} =
+%     J \left(\begin{matrix}
+%         \pd{x}{\xi} & \pd{x}{\eta} \\
+%         \pd{y}{\xi} & \pd{y}{\eta} \\
+%     \end{matrix}\right)^{-1} =
+%     \left(\begin{matrix}
+%         \pd{y}{\eta} & -\pd{x}{\eta} \\
+%         -\pd{y}{\xi} & \pd{x}{\xi} \\
+%     \end{matrix}\right).
+% \end{equation}
+
+% The geometric conservation law (GCL)
+% \begin{equation}
+%     \pd{J}{t} + \nabla_{\vec{\chi}} \left(J A^{-1} \vec{w}\right) = 0
+% \end{equation}
+
+% \subsection{Simplifications}
+
+% We assume a constant motion in each spatial direction.
+% \begin{equation}
+%     \begin{gathered}
+%         x(\xi, \eta, t) = x(\xi, \eta, 0) + w_x(t) t \\
+%         y(\xi, \eta, t) = y(\xi, \eta, 0) + w_y(t) t
+%     \end{gathered}
+% \end{equation}
+% Initially, the computational grid aligns with the spatial grid.
+% \begin{equation}
+%     x(\xi, \eta, 0) = \xi \quad \text{and} \quad y(\xi, \eta, 0) = \eta
+% \end{equation}
+
+% \begin{equation}
+%     \begin{gathered}
+%         \pd{}{\xi} x(\xi, \eta, t) =
+%         \pd{}{\xi} \left[x(\xi, \eta, 0) + w_x(t) t\right] =
+%         \pd{\xi}{\xi} = 
+%         1 \\
+%         \pd{}{\eta} x(\xi, \eta, t) =
+%         \pd{}{\eta} \left[x(\xi, \eta, 0) + w_x(t) t\right] =
+%         \pd{\xi}{\eta} =
+%         0 \\
+%         \pd{}{\xi} y(\xi, \eta, t) =
+%         \pd{}{\xi} \left[y(\xi, \eta, 0) + w_y(t) t\right] =
+%         \pd{\eta}{\xi} =
+%         0 \\
+%         \pd{}{\eta} y(\xi, \eta, t) =
+%         \pd{}{\eta} \left[y(\xi, \eta, 0) + w_y(t) t\right] =
+%         \pd{\eta}{\eta} =
+%         1 \\
+%         \Rightarrow A = \mathbb{I}
+%     \end{gathered}
+% \end{equation}
+
+% % = Transformation =================================================================================
+% \section{Transformation}
+
+% We define a scalar quantity $f$ in the spatial, computational, and material domain as
+% $f(\vec{x}, t)$, $f^{*}(\vec{\chi}, t)$, and $f^{**}(\vec{X}, t)$.
+
+% The spatial description $f(\vec{x}, t)$ can be related to the material description $f^{**}(\vec{X}, t)$ via $\varphi$.
+% \begin{equation}
+%     f^{**}(\vec{X}, t) = f(\varphi(\vec{X}, t), t) = f \circ \varphi
+% \end{equation}
+% The gradient then follows as
+% \begin{equation}
+%     \pd{f^{**}}{(\vec{X}, t)} =
+%     \pd{\varphi(\vec{X}, t)}{(\vec{X}, t)} \cdot
+%     \pd{f(\vec{x}, t)}{(\vec{x}, t)}
+% \end{equation}
+% or in matrix form
+% \begin{equation}
+%     \left(\pd{f^{**}}{\vec{X}} \quad \pd{f^{**}}{t}\right) = 
+%     \left(\pd{f}{\vec{x}} \quad \pd{f}{t}\right) \cdot 
+%     \left(\begin{matrix}
+%         \pd{\vec{x}}{\vec{X}} & \vec{u} \\
+%         0 & 1
+%     \end{matrix}\right)
+% \end{equation}
+% From this follows
+% \begin{equation}
+%     \pd{f^{**}}{\vec{X}} = \pd{f}{\vec{x}} \pd{\vec{x}}{\vec{X}}
+% \end{equation}
+% and
+% \begin{equation}
+%     \pd{f^{**}}{t}
+%     = \pd{f}{\vec{x}} \cdot \vec{u} + \pd{f}{t}
+%     = \pd{f}{t} + (\vec{u} \cdot \nabla) f
+% \end{equation}
+
+
+% ------------------------------------------------------------------------------------------------------
+
+% For the computational we than have
+% \begin{equation}
+%     f^{**}(\vec{X}, t) = f^{*}((\vec{\chi}, t), t) = f^{*} \circ \psi^{-1}
+% \end{equation}
+% and with the same argument as above, we get
+% \begin{equation}
+%     \begin{aligned}
+%         &\pd{f^{**}}{t} = \pd{f^*}{t} + \pd{f^*}{t} \cdot \vec{w} \\
+%         \Rightarrow &\pd{f^{**}}{t} = \pd{f^*}{t} + \pd{f}{t} \cdot \vec{c} \\
+%     \end{aligned}
+% \end{equation}
+
+\newpage
+\printbibliography
+
+\end{document}
