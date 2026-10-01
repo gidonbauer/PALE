@@ -71,8 +71,7 @@ constexpr void update_s(const Grid<Float, LAYOUT>& grid,
 
     const auto srci       = IF_NONE_ELSE(SRC_t, 0.0, src(i, j));
 
-    s(i, j) =
-        (Ji_old * s_old(i, j) - dt * div_factor * (dFdq1 + dFdq2) + dt * src_factor * srci) / Ji;
+    s(i, j) = (Ji_old * s_old(i, j) - dt * (div_factor * (dFdq1 + dFdq2) - src_factor * srci)) / Ji;
   });
 }
 

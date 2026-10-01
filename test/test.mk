@@ -8,7 +8,8 @@ DEFAULT_BUILD_TESTS = test/Advection-Cartesian.cpp \
                       test/Hill-Vortex \
                       test/ALE-Polar-Conservation \
                       test/ALE-Spherical-Conservation \
-                      test/GCL
+                      test/GCL \
+                      test/Scalar-Source
 DEFAULT_BUILD_TESTS := ${addprefix bin/, ${basename ${DEFAULT_BUILD_TESTS}}}
 
 ${DEFAULT_BUILD_TESTS}: bin/test/%: test/%.cpp ${HEADERS} | bin/test test/output
@@ -34,6 +35,9 @@ bin/test/Scriven-2D: test/Scriven.cpp ${HEADERS} | bin/test test/output
 
 bin/test/Scriven-3D: test/Scriven.cpp ${HEADERS} | bin/test test/output
 	${CXX} ${CXX_FLAGS} ${CXX_INC} ${GSL_INC} -DDIMENSION=3 -o $@ $< ${CXX_LIB} ${GSL_LIB}
+
+bin/test/ALE-Scalar-Source: test/Scalar-Source.cpp  ${HEADERS} | bin/test test/output
+	${CXX} ${CXX_FLAGS} ${CXX_INC} -DUSE_ALE -o $@ $< ${CXX_LIB}
 
 test/output bin/test: %:
 	mkdir -p $@
