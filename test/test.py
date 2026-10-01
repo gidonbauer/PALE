@@ -185,22 +185,33 @@ STATUS_WIDTH = 4
 MIN_DOTS = 30        # minimum dots next to the longest name
 METRICS_INDENT = 6   # spaces before the metrics line, after the leading space
 
-def render_results(results: Results, file: TextIO = sys.stdout) -> None:
+def render_results(results: Results, show_only_failed: bool, file: TextIO = sys.stdout) -> None:
     color = file.isatty()
 
     rows: List[Tuple[str, bool, str]] = []
     num_passed = 0
     for (name, inp), res in results.items():
+        ok = res.ret == 0
+        num_passed += ok
+        if show_only_failed and ok: continue
         metrics = (
             f"wall={res.runtime:.2f}s, "
             f"cpu={res.cpu_time:.2f}s, "
             f"mem={format_bytes(res.max_rss)}"
         )
-        ok = res.ret == 0
         rows.append((run_name(name, inp), ok, metrics))
-        num_passed += ok
+
+    def print_num_passed():
+        if color:
+            color_begin = f"{GREEN if num_passed == len(results) else RED}"
+            color_end   = f"{RESET}"
+        else:
+            color_begin = ""
+            color_end   = ""
+        print(f"\n Passed {color_begin}{num_passed}/{len(results)}{color_end}")
 
     if not rows:
+        print_num_passed()
         return
 
     longest_name = max(len(n) for n, _, _ in rows)
@@ -222,13 +233,7 @@ def render_results(results: Results, file: TextIO = sys.stdout) -> None:
         print(f" {name} {dots} {status}", file=file)
         print(f" {'':{METRICS_INDENT}}{metrics}", file=file)
 
-    if color:
-        color_begin = f"{GREEN if num_passed == len(rows) else RED}"
-        color_end   = f"{RESET}"
-    else:
-        color_begin = ""
-        color_end   = ""
-    print(f"\n Passed {color_begin}{num_passed}/{len(rows)}{color_end}")
+    print_num_passed()
 
     print(f" {border}", file=file)
 
@@ -295,6 +300,11 @@ def parse_args(argv: Union[List[str], None] = None) -> Tuple[argparse.Namespace,
         help="print executed commands (default: False)",
     )
     p.add_argument(
+        "--show-only-failed",
+        action="store_true",
+        help="print only failed test cases (default: False)"
+    )
+    p.add_argument(
             "case_names",
             nargs="*",
             help="test cases to run, can match on substrings (default: all cases)"
@@ -319,7 +329,7 @@ def main():
     if not build_tests(cases, jobs=args.jobs, force_parallel=args.parallel, verbose=args.verbose):
         sys.exit(1)
     results = run_tests(cases, jobs=args.jobs, verbose=args.verbose)
-    render_results(results)
+    render_results(results, args.show_only_failed)
     if not write_logs(results):
         sys.exit(1)
     dump_failed(results)

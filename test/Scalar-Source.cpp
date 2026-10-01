@@ -26,7 +26,7 @@ constexpr Float CFL       = 0.5;
 constexpr Float tend      = 1.0;
 constexpr Float dt_write  = tend / 100.0;
 
-#if USE_ALE
+#ifdef USE_ALE
 constexpr Vec2<Float> w{.x = 0, .y = 1.0};
 #else
 constexpr None w;
@@ -70,7 +70,7 @@ auto main(int argc, char** argv) -> int {
   }
 
   Igor::Info("{}", coords2str(coords));
-#if USE_ALE
+#ifdef USE_ALE
   const auto case_name = "ALE-Scalar-Source-"s + coords2str(coords);
 #else
   const auto case_name = "Scalar-Source-"s + coords2str(coords);
@@ -145,7 +145,7 @@ auto main(int argc, char** argv) -> int {
       .top    = Neumann(),
   };
 
-  Float sum_src = 0.0;
+  [[maybe_unused]] Float sum_dt_cube = 0.0;
   while (t < tend) {
     dt = std::min({advection_adjust_dt(grid, D, CFL), dt_write, tend - t});
 
@@ -153,8 +153,6 @@ auto main(int argc, char** argv) -> int {
     copy(J, J_old);
 #endif  // USE_ALE
     copy(s, s_old);
-
-    const auto sum_src_old = sum_src;
 
     for (Index sub_iter = 0; sub_iter < 2; ++sub_iter) {
       const auto local_dt = sub_iter == 0 ? dt / 2.0 : dt;
@@ -167,9 +165,6 @@ auto main(int argc, char** argv) -> int {
       update_s(grid, local_dt, J_old, J, Fs, src, s_old, s);
       apply_bconds(grid, bconds, s, t);
 
-      stats_src = stats(grid, src);
-      sum_src   = sum_src_old + local_dt * stats_src.sum;
-
 #ifdef USE_ALE
       grid.move_grid_by_velocity(w, 0.5 * dt);
 #endif  // USE_ALE
@@ -178,10 +173,11 @@ auto main(int argc, char** argv) -> int {
 #ifdef USE_ALE
     stats_J = stats(grid, J);
 #endif  // USE_ALE
-    stats_s    = stats(grid, s);
-    stats_src  = stats(grid, src);
+    stats_s      = stats(grid, s);
+    stats_src    = stats(grid, src);
 
-    t         += dt;
+    sum_dt_cube += dt * dt * dt;
+    t           += dt;
 
     monitor.write();
     if (should_save(t, dt, dt_write, tend)) {
@@ -190,22 +186,59 @@ auto main(int argc, char** argv) -> int {
     }
   }
 
-  // TODO: Calculate the correct amount of s analytically
 #ifdef USE_ALE
+  Float tol;
   Float s_sum_exp;
   switch (coords) {
-    case Coordinates::CARTESIAN:           s_sum_exp = total_src * tend; break;
+    case Coordinates::CARTESIAN:
+      s_sum_exp = total_src * tend;
+      tol       = 1e-12;
+      break;
     case Coordinates::POLAR:
-    case Coordinates::SYMMETRIC_SPHERICAL: s_sum_exp = sum_src; break;
+      {
+        const auto A = grid.transform_reduce_i(
+            0.0, FOREACH_FUNC { return src(i, j) * grid.dr() * grid.dtheta(); }, std::plus<>{});
+        s_sum_exp = total_src * tend + 0.5 * w.r() * A * Igor::sqr(tend);
+        tol       = 1e-12;
+      }
+      break;
+    case Coordinates::SYMMETRIC_SPHERICAL:
+      {
+        Grid<Float> grid2(theta_min, theta_max, N, r_min, r_max, N, 3, coords);
+        const auto Q_prime =
+            2.0 * w.r() *
+            grid2.transform_reduce_i(
+                0.0,
+                FOREACH_FUNC {
+                  const auto theta = grid2.thetam(i);
+                  const auto r     = grid2.rm(j);
+                  return src(i, j) * std::sin(theta) * r * grid2.dtheta() * grid2.dr();
+                },
+                std::plus<>{});
+        const auto Q_prime_prime =
+            2.0 * Igor::sqr(w.r()) *
+            grid2.transform_reduce_i(
+                0.0,
+                FOREACH_FUNC {
+                  const auto theta = grid2.thetam(i);
+                  return src(i, j) * std::sin(theta) * grid2.dtheta() * grid2.dr();
+                },
+                std::plus<>{});
+        s_sum_exp = total_src * tend +             //
+                    0.5 * Q_prime * tend * tend +  //
+                    1.0 / 6.0 * Q_prime_prime * tend * tend * tend;
+        tol       = 1.1 * Q_prime_prime / 24.0 * sum_dt_cube;
+        break;
+      }
   }
 #else
+  constexpr Float tol  = 1e-12;
   const auto s_sum_exp = total_src * tend;
 #endif  // USE_ALE
   Igor::Info("sum(s)          = {:.12e}", stats_s.sum);
-  Igor::Info("int(sum(s))     = {:.12e}", sum_src);
   Igor::Info("expected sum(s) = {:.12e}", s_sum_exp);
+  Igor::Info("tol             = {:.12e}", tol);
 
-  constexpr Float tol = 1e-12;
   if (std::abs(stats_s.sum - s_sum_exp) > tol || std::isnan(stats_s.sum)) {
     Igor::Error("Did not get exact s, expected {:.12e} but got {:.12e}: abs. error = {:.12e}",
                 s_sum_exp,
