@@ -67,12 +67,15 @@ constexpr void update_s(const Grid<Float, LAYOUT>& grid,
     const auto Ji_old     = IF_NONE_ELSE(J_t, 1.0, J_old(i, j));
     const auto Ji         = IF_NONE_ELSE(J_t, 1.0, J(i, j));
     const auto div_factor = IF_NONE_ELSE(J_t, 1.0 / H, 1.0);
+    const auto src_factor = IF_NONE_ELSE(J_t, 1.0, H);
 
     const auto srci       = IF_NONE_ELSE(SRC_t, 0.0, src(i, j));
 
-    s(i, j) = (Ji_old * s_old(i, j) - dt * div_factor * (dFdq1 + dFdq2) + dt * H * srci) / Ji;
+    s(i, j) =
+        (Ji_old * s_old(i, j) - dt * div_factor * (dFdq1 + dFdq2) + dt * src_factor * srci) / Ji;
   });
 }
+
 }  // namespace Orthogonal
 
 // =================================================================================================

@@ -176,7 +176,7 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
         grid.dy();
 
     const auto T11        = (FUX(i, j) + FUX(i, j - 1)) / 2.0;
-    const auto T21        = (FVX(i + 1, j) + FVX(i, j)) / 2.0;
+    const auto T21        = (FUY(i + 1, j) + FUY(i, j)) / 2.0;
     const auto T33        = IF_NONE_ELSE(FWZ_t, 0.0, (FWZ(i, j) + FWZ(i, j - 1)) / 2.0);
 
     const auto h1         = Metric::h1(grid.xm(i), grid.y(j));
