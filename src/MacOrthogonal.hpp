@@ -144,15 +144,15 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
 
     const auto T12        = (FVX(i, j + 1) + FVX(i, j)) / 2.0;
     const auto T22        = (FVY(i, j) + FVY(i - 1, j)) / 2.0;
-    const auto T33        = If_NONE_ELSE(FWZ_t, 0.0, (FWZ(i, j) + FWZ(i - 1, j)) / 2.0);
+    const auto T33        = IF_NONE_ELSE(FWZ_t, 0.0, (FWZ(i, j) + FWZ(i - 1, j)) / 2.0);
 
     const auto h2         = Metric::h2(grid.x(i), grid.ym(j));
     const auto h3         = Metric::h3(grid.x(i), grid.ym(j));
     const auto inv_H      = 1.0 / Metric::H(grid.x(i), grid.ym(j));
 
-    const auto Ji_old     = If_NONE_ELSE(J_t, 1.0, (J_old(i, j) + J_old(i - 1, j)) / 2.0);
-    const auto Ji         = If_NONE_ELSE(J_t, 1.0, (J(i, j) + J(i - 1, j)) / 2.0);
-    const auto div_factor = If_NONE_ELSE(J_t, inv_H, 1.0);
+    const auto Ji_old     = IF_NONE_ELSE(J_t, 1.0, (J_old(i, j) + J_old(i - 1, j)) / 2.0);
+    const auto Ji         = IF_NONE_ELSE(J_t, 1.0, (J(i, j) + J(i - 1, j)) / 2.0);
+    const auto div_factor = IF_NONE_ELSE(J_t, inv_H, 1.0);
 
     u.x(i, j) = (Ji_old * u_old.x(i, j) - dt * div_factor *
                                               (dHT11_dq1 + dHT21_dq2 +  //
@@ -177,15 +177,15 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
 
     const auto T11        = (FUX(i, j) + FUX(i, j - 1)) / 2.0;
     const auto T21        = (FVX(i + 1, j) + FVX(i, j)) / 2.0;
-    const auto T33        = If_NONE_ELSE(FWZ_t, 0.0, (FWZ(i, j) + FWZ(i, j - 1)) / 2.0);
+    const auto T33        = IF_NONE_ELSE(FWZ_t, 0.0, (FWZ(i, j) + FWZ(i, j - 1)) / 2.0);
 
     const auto h1         = Metric::h1(grid.xm(i), grid.y(j));
     const auto h3         = Metric::h3(grid.xm(i), grid.y(j));
     const auto inv_H      = 1.0 / Metric::H(grid.xm(i), grid.y(j));
 
-    const auto Ji_old     = If_NONE_ELSE(J_t, 1.0, (J_old(i, j) + J_old(i, j - 1)) / 2.0);
-    const auto Ji         = If_NONE_ELSE(J_t, 1.0, (J(i, j) + J(i, j - 1)) / 2.0);
-    const auto div_factor = If_NONE_ELSE(J_t, inv_H, 1.0);
+    const auto Ji_old     = IF_NONE_ELSE(J_t, 1.0, (J_old(i, j) + J_old(i, j - 1)) / 2.0);
+    const auto Ji         = IF_NONE_ELSE(J_t, 1.0, (J(i, j) + J(i, j - 1)) / 2.0);
+    const auto div_factor = IF_NONE_ELSE(J_t, inv_H, 1.0);
 
     u.y(i, j) = (Ji_old * u_old.y(i, j) - dt * div_factor *
                                               (dHT12_dq1 + dHT22_dq2 +  //

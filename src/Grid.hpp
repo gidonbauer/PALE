@@ -682,7 +682,7 @@ template <typename T, typename Other>
 concept IsNoneOr = IsNone<T> || std::is_same_v<std::remove_cvref_t<T>, std::remove_cvref_t<Other>>;
 
 // NOLINTNEXTLINE
-#define If_NONE_ELSE(type, value_if_none, value_if_not_none)                                       \
+#define IF_NONE_ELSE(type, value_if_none, value_if_not_none)                                       \
   [=] {                                                                                            \
     if constexpr (IsNone<type>) {                                                                  \
       return value_if_none;                                                                        \

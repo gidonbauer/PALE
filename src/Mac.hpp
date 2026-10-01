@@ -4,7 +4,6 @@
 
 #include "Grid.hpp"
 #include "MacOrthogonal.hpp"
-#include "Metrics.hpp"
 
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
@@ -145,29 +144,6 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
                         const FaceVector<Float, LAYOUT> u_old,
                         FaceVector<Float, LAYOUT> u) {
   update_u(grid, dt, None{}, None{}, FUX, FUY, FVX, FVY, FWZ, u_old, u);
-}
-
-// =================================================================================================
-template <typename Float, Layout LAYOUT>
-constexpr void update_u(const Grid<Float, LAYOUT>& grid,
-                        Float dt,
-                        const Scalar<Float, LAYOUT> J_old,
-                        const Scalar<Float, LAYOUT> J,
-                        const Scalar<Float, LAYOUT> FUX,
-                        const VertexScalar<Float, LAYOUT> FUY,
-                        const VertexScalar<Float, LAYOUT> FVX,
-                        const Scalar<Float, LAYOUT> FVY,
-                        const Scalar<Float, LAYOUT> FWZ,
-                        const FaceVector<Float, LAYOUT> u_old,
-                        FaceVector<Float, LAYOUT> u) {
-  switch (grid.coords()) {
-    case Coordinates::CARTESIAN: Igor::Panic("Do not use `FWZ` for Cartesian coordinates.");
-    case Coordinates::POLAR:     Igor::Panic("Do not use `FWZ` for polar coordinates.");
-    case Coordinates::SYMMETRIC_SPHERICAL:
-      return OrthogonalCoordinates::update_u<Metric::SymmetricSpherical>(
-          grid, dt, J_old, J, FUX, FUY, FVX, FVY, FWZ, u_old, u);
-  }
-  Igor::Panic("Unreachable");
 }
 
 // =================================================================================================
