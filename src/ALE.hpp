@@ -22,7 +22,6 @@ template <typename Metric, typename Float, Layout LAYOUT>
 constexpr void update_J(const Grid<Float, LAYOUT>& grid,
                         Float dt,
                         const Vec2<Float>& w,
-                        const Scalar<Float, LAYOUT> H0,
                         const Scalar<Float, LAYOUT> J_old,
                         Scalar<Float, LAYOUT> J) {
   grid.foreach_i(FOREACH_FUNC {
@@ -46,7 +45,7 @@ constexpr void update_J(const Grid<Float, LAYOUT>& grid,
 
     const auto dHFdy     = (HF_top - HF_bottom) / grid.dy();
 
-    J(i, j)              = J_old(i, j) - dt * (dHFdx + dHFdy) / H0(i, j);
+    J(i, j)              = J_old(i, j) - dt * (dHFdx + dHFdy);
   });
 }
 
@@ -54,13 +53,12 @@ template <typename Float, Layout LAYOUT>
 constexpr void update_J(const Grid<Float, LAYOUT>& grid,
                         Float dt,
                         const Vec2<Float>& w,
-                        const Scalar<Float, LAYOUT> H0,
                         const Scalar<Float, LAYOUT> J_old,
                         Scalar<Float, LAYOUT> J) {
   switch (grid.coords()) {
-    case Coordinates::CARTESIAN: return update_J<Metric::Cartesian>(grid, dt, w, H0, J_old, J);
-    case Coordinates::POLAR:     return update_J<Metric::Polar>(grid, dt, w, H0, J_old, J);
+    case Coordinates::CARTESIAN: return update_J<Metric::Cartesian>(grid, dt, w, J_old, J);
+    case Coordinates::POLAR:     return update_J<Metric::Polar>(grid, dt, w, J_old, J);
     case Coordinates::SYMMETRIC_SPHERICAL:
-      return update_J<Metric::SymmetricSpherical>(grid, dt, w, H0, J_old, J);
+      return update_J<Metric::SymmetricSpherical>(grid, dt, w, J_old, J);
   }
 }

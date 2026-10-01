@@ -5,7 +5,6 @@ TARGETS = bin/advection-diffusion \
           bin/polar \
           bin/ale-polar \
           bin/ale-rotation \
-          bin/old-scriven-3d \
           bin/scriven-2d \
           bin/scriven-3d
 

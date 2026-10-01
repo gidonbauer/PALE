@@ -4,6 +4,7 @@
 #include <Igor/Math.hpp>
 #include <Igor/Timer.hpp>
 
+#include "ALE.hpp"
 #include "Advection-Diffusion.hpp"
 #include "BoundaryConditions.hpp"
 #include "Common.hpp"
@@ -19,7 +20,7 @@ using Float               = double;
 constexpr Float pi        = std::numbers::pi_v<Float>;
 
 constexpr Float r_min     = 1.0;
-constexpr Float r_max     = 5.0;
+constexpr Float r_max     = 10.0;
 constexpr Float theta_min = 0.0;
 constexpr Float theta_max = 2.0 * pi;
 
@@ -100,8 +101,12 @@ auto main(int argc, char** argv) -> int {
   auto s     = grid.alloc_scalar();
   auto Fs    = grid.alloc_face_vector();
 
-  Float t    = 0.0;
-  Float dt   = 1e-1;
+  auto J_old = grid.alloc_scalar();
+  auto J     = grid.alloc_scalar();
+  calc_H(grid, J);
+
+  Float t  = 0.0;
+  Float dt = 1e-1;
 
   const BConds<Float> uth_bconds{
       .left   = Periodic{},
@@ -143,6 +148,7 @@ auto main(int argc, char** argv) -> int {
   writer.add_field("p", p);
   writer.add_field("div", div);
   writer.add_field("s", s);
+  writer.add_field("J", J);
   if (!writer.write(t)) { return 1; }
 
   Stats p_stats      = stats(grid, p);
@@ -150,6 +156,7 @@ auto main(int argc, char** argv) -> int {
   Stats v_stats      = stats(grid, u.y);
   Stats div_stats    = stats(grid, div);
   Stats s_stats      = stats(grid, s);
+  Stats J_stats      = stats(grid, J);
   Float div_max      = std::max(std::abs(div_stats.min), std::abs(div_stats.max));
 
   const Float s0_sum = s_stats.sum;
@@ -166,6 +173,8 @@ auto main(int argc, char** argv) -> int {
   monitor.add_variable(&s_stats.min, "min(s)");
   monitor.add_variable(&s_stats.max, "max(s)");
   monitor.add_variable(&s_stats.sum, "sum(s)");
+  monitor.add_variable(&J_stats.min, "min(J)");
+  monitor.add_variable(&J_stats.max, "max(J)");
   monitor.add_variable(&div_max, "absmax(div)");
   monitor.add_variable(&mg_res, "res(MG)");
   monitor.add_variable(&mg_cycles, "cycles(MG)");
@@ -185,23 +194,24 @@ auto main(int argc, char** argv) -> int {
 
     copy(u, u_old);
     copy(s, s_old);
+    copy(J, J_old);
 
     mg_cycles = 0;
     for (Index sub_iter = 0; sub_iter < 2; ++sub_iter) {
       const auto local_dt = sub_iter == 0 ? 0.5 * dt : dt;
 
-      // 1) Prediction
-      calc_mom_flux(grid, u, p, rho, mu, w, FUX, FUY, FVX, FVY);
-      calc_advection_flux(grid, u, s, w, D, Fs);
-      update_u(grid, local_dt, w, FUX, FUY, FVX, FVY, u_old, u);
-      apply_velocity_bconds(grid, uth_bconds, ur_bconds, u);
+      // 1) Update the cell volume metric J
+      update_J(grid, local_dt, w, J_old, J);
 
-      // 2) Update the physical position of the grid
-      grid.move_grid_by_velocity(w, 0.5 * dt);
-      solver.move_grid_by_velocity(w, 0.5 * dt);
+      // 2) Prediction
+      calc_mom_flux(grid, u, p, rho, mu, w, FUX, FUY, FVX, FVY);
+      update_u(grid, local_dt, J_old, J, FUX, FUY, FVX, FVY, u_old, u);
+      apply_velocity_bconds(grid, uth_bconds, ur_bconds, u);
       correct_outflow(grid, u);
 
       // 3) Pressure calculation
+      grid.move_grid_by_velocity(w, 0.5 * dt);
+      solver.move_grid_by_velocity(w, 0.5 * dt);
       calc_div(grid, u, div);
       grid.foreach_i(FOREACH_FUNC { div(i, j) *= rho / local_dt; });
       if (!solver.solve(dp, div, 1e-6 / local_dt)) {
@@ -218,12 +228,16 @@ auto main(int argc, char** argv) -> int {
       // 4) Projection
       correct_velocity(grid, dp, rho, local_dt, u, p);
       apply_velocity_bconds_only_periodic(grid, uth_bconds, ur_bconds, u);
+      grid.move_grid_by_velocity(w, -0.5 * dt);
 
       // 5) Update scalar
-      const auto Delta_old  = local_dt * w;
-      const auto Delta_flux = 0.5 * dt * w;
+      calc_advection_flux(grid, u, s, w, D, Fs);
       update_s(grid, local_dt, J_old, J, Fs, s_old, s);
       apply_bconds(grid, s_bconds, s, t);
+
+      // 6) Update the physical position of the grid
+      grid.move_grid_by_velocity(w, 0.5 * dt);
+      // solver.move_grid_by_velocity(w, 0.5 * dt);
     }
     calc_div(grid, u, div);
     interpolate(grid, u, ui);
@@ -249,12 +263,8 @@ auto main(int argc, char** argv) -> int {
   Igor::Info("abs. conservation error = {:.12e}", abserr_conservation);
 
   const auto tol = [=] {
-    if (N <= 16) {
-      return 1e-8;
-    } else if (N <= 32) {
-      return 1e-11;
-    }
-    return 1e-12;
+    if (N <= 16) { return 1e-11; }
+    return 1e-13;
   }();
   if (abserr_conservation > tol || std::isnan(abserr_conservation)) {
     Igor::Error("Did not conserve scalar `s`, abs. error of conservation is {:.16}, expected <{}",

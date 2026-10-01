@@ -142,7 +142,8 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
 template <typename Float, Layout LAYOUT>
 constexpr void update_u(const Grid<Float, LAYOUT>& grid,
                         Float dt,
-                        const Vec2<Float>& w,
+                        const Scalar<Float, LAYOUT> J_old,
+                        const Scalar<Float, LAYOUT> J,
                         const Scalar<Float, LAYOUT> FUX,
                         const VertexScalar<Float, LAYOUT> FUY,
                         const VertexScalar<Float, LAYOUT> FVX,
@@ -152,10 +153,10 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
   switch (grid.coords()) {
     case Coordinates::CARTESIAN:
       return OrthogonalCoordinates::update_u<Metric::Cartesian>(
-          grid, dt, w, FUX, FUY, FVX, FVY, u_old, u);
+          grid, dt, J_old, J, FUX, FUY, FVX, FVY, u_old, u);
     case Coordinates::POLAR:
       return OrthogonalCoordinates::update_u<Metric::Polar>(
-          grid, dt, w, FUX, FUY, FVX, FVY, u_old, u);
+          grid, dt, J_old, J, FUX, FUY, FVX, FVY, u_old, u);
     case Coordinates::SYMMETRIC_SPHERICAL:
       Igor::Panic("Use `FWZ` for symmetric spherical coordinates.");
   }
@@ -187,7 +188,8 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
 template <typename Float, Layout LAYOUT>
 constexpr void update_u(const Grid<Float, LAYOUT>& grid,
                         Float dt,
-                        const Vec2<Float>& w,
+                        const Scalar<Float, LAYOUT> J_old,
+                        const Scalar<Float, LAYOUT> J,
                         const Scalar<Float, LAYOUT> FUX,
                         const VertexScalar<Float, LAYOUT> FUY,
                         const VertexScalar<Float, LAYOUT> FVX,
@@ -200,7 +202,7 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
     case Coordinates::POLAR:     Igor::Panic("Do not use `FWZ` for polar coordinates.");
     case Coordinates::SYMMETRIC_SPHERICAL:
       return OrthogonalCoordinates::update_u<Metric::SymmetricSpherical>(
-          grid, dt, w, FUX, FUY, FVX, FVY, FWZ, u_old, u);
+          grid, dt, J_old, J, FUX, FUY, FVX, FVY, FWZ, u_old, u);
   }
   Igor::Panic("Unreachable");
 }

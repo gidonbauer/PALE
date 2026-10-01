@@ -355,12 +355,11 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
 }
 
 // =================================================================================================
-// Here we need to account for the increase of cell size, this is done through the additional term
-// $\vec{u} (\nabla \cdot \vec{w})$.
 template <typename Metric, typename Float, Layout LAYOUT>
 constexpr void update_u(const Grid<Float, LAYOUT>& grid,
                         Float dt,
-                        const Vec2<Float>& w,
+                        const Scalar<Float, LAYOUT> J_old,
+                        const Scalar<Float, LAYOUT> J,
                         const Scalar<Float, LAYOUT> FUX,
                         const VertexScalar<Float, LAYOUT> FUY,
                         const VertexScalar<Float, LAYOUT> FVX,
@@ -386,24 +385,18 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
          Metric::H(grid.x(i), grid.y(j)) / Metric::h2(grid.x(i), grid.y(j)) * FUY(i, j)) /
         grid.dy();
 
-    const auto T12      = (FVX(i, j + 1) + FVX(i, j)) / 2.0;
-    const auto T22      = (FVY(i, j) + FVY(i - 1, j)) / 2.0;
+    const auto T12    = (FVX(i, j + 1) + FVX(i, j)) / 2.0;
+    const auto T22    = (FVY(i, j) + FVY(i - 1, j)) / 2.0;
 
-    const auto inv_H    = 1.0 / Metric::H(grid.x(i), grid.ym(j));
-    const auto h1       = Metric::h1(grid.x(i), grid.ym(j));
-    const auto h2       = Metric::h2(grid.x(i), grid.ym(j));
-    const auto h3       = Metric::h3(grid.x(i), grid.ym(j));
-    const auto inv_h1h2 = 1.0 / (h1 * h2);
+    const auto h3     = Metric::h3(grid.x(i), grid.ym(j));
 
-    const auto div_w    = inv_H * (w.x * (h2 * Metric::dh3_dq1(grid.x(i), grid.ym(j)) +
-                                          h3 * Metric::dh2_dq1(grid.x(i), grid.ym(j))) +
-                                   w.y * (h1 * Metric::dh3_dq2(grid.x(i), grid.ym(j)) +
-                                          h3 * Metric::dh1_dq2(grid.x(i), grid.ym(j))));
-
-    u.x(i, j) = u_old.x(i, j) - dt * (inv_H * (dHT11_dq1 + dHT21_dq2) +
-                                      inv_h1h2 * (T12 * Metric::dh1_dq2(grid.x(i), grid.ym(j)) +
-                                                  T22 * Metric::dh2_dq1(grid.x(i), grid.ym(j))) +
-                                      u.x(i, j) * div_w);
+    const auto Ji_old = (J_old(i, j) + J_old(i - 1, j)) / 2.0;
+    const auto Ji     = (J(i, j) + J(i - 1, j)) / 2.0;
+    u.x(i, j) =
+        (Ji_old * u_old.x(i, j) - dt * (dHT11_dq1 + dHT21_dq2 +
+                                        (h3 * T12 * Metric::dh1_dq2(grid.x(i), grid.ym(j)) +
+                                         h3 * T22 * Metric::dh2_dq1(grid.x(i), grid.ym(j))))) /
+        Ji;
   });
 
   grid.template foreach_face_i<Dimension::Y>(FOREACH_FUNC {
@@ -419,24 +412,18 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
              FVY(i, j - 1)) /
         grid.dy();
 
-    const auto T21      = (FVX(i + 1, j) + FVX(i, j)) / 2.0;
-    const auto T11      = (FUX(i, j) + FUX(i, j - 1)) / 2.0;
+    const auto T21    = (FVX(i + 1, j) + FVX(i, j)) / 2.0;
+    const auto T11    = (FUX(i, j) + FUX(i, j - 1)) / 2.0;
 
-    const auto inv_H    = 1.0 / Metric::H(grid.xm(i), grid.y(j));
-    const auto h1       = Metric::h1(grid.xm(i), grid.y(j));
-    const auto h2       = Metric::h2(grid.xm(i), grid.y(j));
-    const auto h3       = Metric::h3(grid.xm(i), grid.y(j));
-    const auto inv_h1h2 = 1.0 / (h1 * h2);
+    const auto h3     = Metric::h3(grid.xm(i), grid.y(j));
 
-    const auto div_w    = inv_H * (w.x * (h2 * Metric::dh3_dq1(grid.xm(i), grid.y(j)) +
-                                          h3 * Metric::dh2_dq1(grid.xm(i), grid.y(j))) +
-                                   w.y * (h1 * Metric::dh3_dq2(grid.xm(i), grid.y(j)) +
-                                          h3 * Metric::dh1_dq2(grid.xm(i), grid.y(j))));
-
-    u.y(i, j) = u_old.y(i, j) - dt * (inv_H * (dHT12_dq1 + dHT22_dq2) +
-                                      inv_h1h2 * (T21 * Metric::dh2_dq1(grid.xm(i), grid.y(j)) -
-                                                  T11 * Metric::dh1_dq2(grid.xm(i), grid.y(j))) +
-                                      u.y(i, j) * div_w);
+    const auto Ji_old = (J_old(i, j) + J_old(i, j - 1)) / 2.0;
+    const auto Ji     = (J(i, j) + J(i, j - 1)) / 2.0;
+    u.y(i, j) =
+        (Ji_old * u_old.y(i, j) - dt * (dHT12_dq1 + dHT22_dq2 +
+                                        (h3 * T21 * Metric::dh2_dq1(grid.xm(i), grid.y(j)) -
+                                         h3 * T11 * Metric::dh1_dq2(grid.xm(i), grid.y(j))))) /
+        Ji;
   });
 }
 
@@ -518,7 +505,8 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
 template <typename Metric, typename Float, Layout LAYOUT>
 constexpr void update_u(const Grid<Float, LAYOUT>& grid,
                         Float dt,
-                        const Vec2<Float>& w,
+                        const Scalar<Float, LAYOUT> J_old,
+                        const Scalar<Float, LAYOUT> J,
                         const Scalar<Float, LAYOUT> FUX,
                         const VertexScalar<Float, LAYOUT> FUY,
                         const VertexScalar<Float, LAYOUT> FVX,
@@ -541,26 +529,22 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
          Metric::H(grid.x(i), grid.y(j)) / Metric::h2(grid.x(i), grid.y(j)) * FUY(i, j)) /
         grid.dy();
 
-    const auto T12   = (FVX(i, j + 1) + FVX(i, j)) / 2.0;
-    const auto T22   = (FVY(i, j) + FVY(i - 1, j)) / 2.0;
-    const auto T33   = (FWZ(i, j) + FWZ(i - 1, j)) / 2.0;
+    const auto T12    = (FVX(i, j + 1) + FVX(i, j)) / 2.0;
+    const auto T22    = (FVY(i, j) + FVY(i - 1, j)) / 2.0;
+    const auto T33    = (FWZ(i, j) + FWZ(i - 1, j)) / 2.0;
 
-    const auto inv_H = 1.0 / Metric::H(grid.x(i), grid.ym(j));
-    const auto h1    = Metric::h1(grid.x(i), grid.ym(j));
-    const auto h2    = Metric::h2(grid.x(i), grid.ym(j));
-    const auto h3    = Metric::h3(grid.x(i), grid.ym(j));
+    const auto h2     = Metric::h2(grid.x(i), grid.ym(j));
+    const auto h3     = Metric::h3(grid.x(i), grid.ym(j));
 
-    const auto div_w = inv_H * (w.x * (h2 * Metric::dh3_dq1(grid.x(i), grid.ym(j)) +
-                                       h3 * Metric::dh2_dq1(grid.x(i), grid.ym(j))) +
-                                w.y * (h1 * Metric::dh3_dq2(grid.x(i), grid.ym(j)) +
-                                       h3 * Metric::dh1_dq2(grid.x(i), grid.ym(j))));
+    const auto Ji_old = (J_old(i, j) + J_old(i - 1, j)) / 2.0;
+    const auto Ji     = (J(i, j) + J(i - 1, j)) / 2.0;
 
-    u.x(i, j) = u_old.x(i, j) -
-                dt * (inv_H * (dHT11_dq1 + dHT21_dq2) +
-                      (T12 * Metric::dh1_dq2(grid.x(i), grid.ym(j)) +
-                       T22 * Metric::dh2_dq1(grid.x(i), grid.ym(j))) /
-                          (h1 * h2) -
-                      T33 / (h1 * h3) * Metric::dh3_dq1(grid.x(i), grid.ym(j)) + u.x(i, j) * div_w);
+    u.x(i, j) =
+        (Ji_old * u_old.x(i, j) - dt * (dHT11_dq1 + dHT21_dq2 +  //
+                                        h3 * T12 * Metric::dh1_dq2(grid.x(i), grid.ym(j)) -
+                                        h3 * T22 * Metric::dh2_dq1(grid.x(i), grid.ym(j)) -
+                                        h2 * T33 * Metric::dh3_dq1(grid.x(i), grid.ym(j)))) /
+        Ji;
   });
 
   grid.template foreach_face_i<Dimension::Y>(FOREACH_FUNC {
@@ -576,26 +560,22 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
              FVY(i, j - 1)) /
         grid.dy();
 
-    const auto T11   = (FUX(i, j) + FUX(i, j - 1)) / 2.0;
-    const auto T21   = (FVX(i + 1, j) + FVX(i, j)) / 2.0;
-    const auto T33   = (FWZ(i, j) + FWZ(i, j - 1)) / 2.0;
+    const auto T11    = (FUX(i, j) + FUX(i, j - 1)) / 2.0;
+    const auto T21    = (FVX(i + 1, j) + FVX(i, j)) / 2.0;
+    const auto T33    = (FWZ(i, j) + FWZ(i, j - 1)) / 2.0;
 
-    const auto inv_H = 1.0 / Metric::H(grid.xm(i), grid.y(j));
-    const auto h1    = Metric::h1(grid.xm(i), grid.y(j));
-    const auto h2    = Metric::h2(grid.xm(i), grid.y(j));
-    const auto h3    = Metric::h3(grid.xm(i), grid.y(j));
+    const auto h1     = Metric::h1(grid.xm(i), grid.y(j));
+    const auto h3     = Metric::h3(grid.xm(i), grid.y(j));
 
-    const auto div_w = inv_H * (w.x * (h2 * Metric::dh3_dq1(grid.xm(i), grid.y(j)) +
-                                       h3 * Metric::dh2_dq1(grid.xm(i), grid.y(j))) +
-                                w.y * (h1 * Metric::dh3_dq2(grid.xm(i), grid.y(j)) +
-                                       h3 * Metric::dh1_dq2(grid.xm(i), grid.y(j))));
+    const auto Ji_old = (J_old(i, j) + J_old(i, j - 1)) / 2.0;
+    const auto Ji     = (J(i, j) + J(i, j - 1)) / 2.0;
 
-    u.y(i, j) = u_old.y(i, j) -
-                dt * (inv_H * (dHT12_dq1 + dHT22_dq2) +
-                      (T21 * Metric::dh2_dq1(grid.xm(i), grid.y(j)) -
-                       T11 * Metric::dh1_dq2(grid.xm(i), grid.y(j))) /
-                          (h1 * h2) -
-                      T33 / (h2 * h3) * Metric::dh3_dq2(grid.xm(i), grid.y(j)) + u.y(i, j) * div_w);
+    u.y(i, j) =
+        (Ji_old * u_old.y(i, j) - dt * (dHT12_dq1 + dHT22_dq2 +  //
+                                        h3 * T21 * Metric::dh2_dq1(grid.xm(i), grid.y(j)) -
+                                        h3 * T11 * Metric::dh1_dq2(grid.xm(i), grid.y(j)) -
+                                        h1 * T33 * Metric::dh3_dq2(grid.xm(i), grid.y(j)))) /
+        Ji;
   });
 }
 

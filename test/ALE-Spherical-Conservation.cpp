@@ -4,6 +4,7 @@
 #include <Igor/Math.hpp>
 #include <Igor/Timer.hpp>
 
+#include "ALE.hpp"
 #include "Advection-Diffusion.hpp"
 #include "BoundaryConditions.hpp"
 #include "Common.hpp"
@@ -19,7 +20,7 @@ using Float               = double;
 constexpr Float pi        = std::numbers::pi_v<Float>;
 
 constexpr Float r_min     = 1.0;
-constexpr Float r_max     = 5.0;
+constexpr Float r_max     = 10.0;
 constexpr Float theta_min = 0.0;
 constexpr Float theta_max = pi;
 
@@ -65,16 +66,6 @@ constexpr void correct_outflow(const Grid<Float, LAYOUT>& grid, FaceVector<Float
 }
 
 // =================================================================================================
-template <typename Float, Layout LAYOUT>
-constexpr void calc_J(const Grid<Float, LAYOUT>& grid, Scalar<Float, LAYOUT> J) {
-  auto cube = [](Float x) { return x * x * x; };
-  grid.foreach_a(FOREACH_FUNC {
-    J(i, j) = (cube(grid.r(j + 1)) - cube(grid.r(j))) / 3.0 *
-              (std::cos(grid.theta(i)) - std::cos(grid.theta(i + 1)));
-  });
-}
-
-// =================================================================================================
 auto main(int argc, char** argv) -> int {
   const auto usage_str = Igor::detail::format("Usage: {} <grid size>", argv[0]);
   if (argc < 2) {
@@ -109,6 +100,7 @@ auto main(int argc, char** argv) -> int {
 
   auto J_old = grid.alloc_scalar();
   auto J     = grid.alloc_scalar();
+  calc_H(grid, J);
 
   auto s_old = grid.alloc_scalar();
   auto s     = grid.alloc_scalar();
@@ -206,19 +198,18 @@ auto main(int argc, char** argv) -> int {
     for (Index sub_iter = 0; sub_iter < 2; ++sub_iter) {
       const auto local_dt = sub_iter == 0 ? 0.5 * dt : dt;
 
-      // 1) Prediction
-      calc_mom_flux(grid, u, p, rho, mu, w, FUX, FUY, FVX, FVY, FWZ);
-      calc_advection_flux(grid, u, s, w, D, Fs);
-      update_u(grid, local_dt, w, FUX, FUY, FVX, FVY, FWZ, u_old, u);
-      apply_velocity_bconds(grid, uth_bconds, ur_bconds, u);
+      // 1) Update the cell volume metric J
+      update_J(grid, local_dt, w, J_old, J);
 
-      // 2) Update the physical position of the grid
-      grid.move_grid_by_velocity(w, 0.5 * dt);
-      solver.move_grid_by_velocity(w, 0.5 * dt);
+      // 2) Prediction
+      calc_mom_flux(grid, u, p, rho, mu, w, FUX, FUY, FVX, FVY, FWZ);
+      update_u(grid, local_dt, J_old, J, FUX, FUY, FVX, FVY, FWZ, u_old, u);
+      apply_velocity_bconds(grid, uth_bconds, ur_bconds, u);
       correct_outflow(grid, u);
-      calc_J(grid, J);
 
       // 3) Pressure calculation
+      grid.move_grid_by_velocity(w, 0.5 * dt);
+      solver.move_grid_by_velocity(w, 0.5 * dt);
       calc_div(grid, u, div);
       grid.foreach_i(FOREACH_FUNC { div(i, j) *= rho / local_dt; });
       if (!solver.solve(dp, div, 1e-6 / local_dt)) {
@@ -235,12 +226,16 @@ auto main(int argc, char** argv) -> int {
       // 4) Projection
       correct_velocity(grid, dp, rho, local_dt, u, p);
       apply_velocity_bconds_only_periodic(grid, uth_bconds, ur_bconds, u);
+      grid.move_grid_by_velocity(w, -0.5 * dt);
 
       // 5) Update scalar
-      // const auto Delta_old  = local_dt * w;
-      // const auto Delta_flux = 0.5 * dt * w;
+      calc_advection_flux(grid, u, s, w, D, Fs);
       update_s(grid, local_dt, J_old, J, Fs, s_old, s);
       apply_bconds(grid, s_bconds, s, t);
+
+      // 6) Update the physical position of the grid
+      grid.move_grid_by_velocity(w, 0.5 * dt);
+      // solver.move_grid_by_velocity(w, 0.5 * dt);
     }
     calc_div(grid, u, div);
     interpolate(grid, u, ui);
@@ -266,11 +261,7 @@ auto main(int argc, char** argv) -> int {
   Igor::Info("abs. conservation error = {:.12e}", abserr_conservation);
 
   const auto tol = [=] {
-    if (N <= 16) {
-      return 1e-8;
-    } else if (N <= 32) {
-      return 1e-11;
-    }
+    if (N <= 16) { return 1e-10; }
     return 1e-12;
   }();
   if (abserr_conservation > tol || std::isnan(abserr_conservation)) {

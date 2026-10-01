@@ -58,6 +58,8 @@ ALL_TESTS = [
     TestCase("ALE-Polar-Conservation",      [16, 32, 64, 128],                              False),
     TestCase("ALE-Spherical-Conservation",  [16, 32, 64, 128],                              False),
     TestCase("GCL",                         ["Cartesian", "Polar", "Symmetric-Spherical"],  False),
+    TestCase("Scriven-2D",                  [16, 32, 64],                                   False),
+    TestCase("Scriven-3D",                  [16, 32, 64],                                   False),
     TestCase("Iterator",                    None,                                           True),
     TestCase("Boundary",                    None,                                           False),
 ]

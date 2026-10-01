@@ -29,5 +29,16 @@ bin/test/Channel-FFT: test/Channel.cpp ${HEADERS} | bin/test test/output
 bin/test/Channel-MG: test/Channel.cpp ${HEADERS} | bin/test test/output
 	${CXX} ${CXX_FLAGS} ${CXX_INC} -DMG_POISSON=1 -o $@ $< ${CXX_LIB}
 
+bin/test/Scriven-2D: test/Scriven.cpp ${HEADERS} | bin/test test/output
+	${CXX} ${CXX_FLAGS} ${CXX_INC} ${GSL_INC} -DDIMENSION=2 -o $@ $< ${CXX_LIB} ${GSL_LIB}
+
+bin/test/Scriven-3D: test/Scriven.cpp ${HEADERS} | bin/test test/output
+	${CXX} ${CXX_FLAGS} ${CXX_INC} ${GSL_INC} -DDIMENSION=3 -o $@ $< ${CXX_LIB} ${GSL_LIB}
+
 test/output bin/test: %:
 	mkdir -p $@
+
+test-clean:
+	rm -r test/logs test/output
+
+.PHONY: test-clean

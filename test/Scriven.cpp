@@ -4,6 +4,7 @@
 #include <Igor/Math.hpp>
 #include <Igor/Timer.hpp>
 
+#include "ALE.hpp"
 #include "Advection-Diffusion.hpp"
 #include "BoundaryConditions.hpp"
 #include "Common.hpp"
@@ -13,15 +14,25 @@
 #include "Mac.hpp"
 #include "Monitor.hpp"
 #include "MultigridPoisson.hpp"
+#include "Quadrature.hpp"
+#include "Test-Common.hpp"
 
 #include "Scriven-Analytical.hpp"
+
+#ifndef DIMENSION
+#define DIMENSION 2
+#endif  // DIMENSION
+
+#if DIMENSION != 2 && DIMENSION != 3
+#error "DIMENSION must be 2 or 3"
+#endif
 
 using Float               = double;
 
 constexpr Float pi        = std::numbers::pi_v<Float>;
 
 constexpr Float r_min     = 0.25e-3;  // Initial radius                     [m]
-constexpr Float r_max     = 10.0 * r_min;
+constexpr Float r_max     = 20.0 * r_min;
 constexpr Float theta_min = 0.0;
 constexpr Float theta_max = pi;
 
@@ -54,6 +65,70 @@ constexpr Float CFL   = 0.5;
 constexpr Float r_end = 2.0 * r_min;  // Final radius                       [m]
 
 // =================================================================================================
+namespace Expected {
+
+#if DIMENSION == 2
+
+constexpr std::array ns    = {16, 32, 64, 128};
+constexpr std::array L1s_T = {
+    5.340780646253e-06,
+    1.225328329217e-06,
+    2.777814157317e-07,
+    8.614552824374e-08,
+};
+static_assert(ns.size() == L1s_T.size());
+constexpr std::array L1s_r = {
+    1.811738822040e-05,
+    3.719041159722e-06,
+    5.506450944890e-07,
+    1.512516540701e-08,
+};
+static_assert(ns.size() == L1s_r.size());
+constexpr std::array L1s_r_dot = {
+    2.075259287376e-05,
+    4.245176862502e-06,
+    6.853033006766e-07,
+    4.784288725711e-08,
+};
+static_assert(ns.size() == L1s_r_dot.size());
+
+#else
+
+constexpr std::array ns    = {16, 32, 64, 128, 256};
+constexpr std::array L1s_T = {
+    1.115073130461e-05,
+    2.845126719225e-06,
+    5.844123876562e-07,
+    1.378742611328e-07,
+    6.244514080612e-08,
+};
+static_assert(ns.size() == L1s_T.size());
+constexpr std::array L1s_r = {
+    2.393055356765e-05,
+    5.855476183342e-06,
+    9.661163921103e-07,
+    8.736656038601e-08,
+    4.616879138168e-08,
+};
+static_assert(ns.size() == L1s_r.size());
+constexpr std::array L1s_r_dot = {
+    5.000687948203e-05,
+    1.226306482408e-05,
+    2.200808856663e-06,
+    2.862390798302e-07,
+    7.150750763645e-08,
+};
+static_assert(ns.size() == L1s_r_dot.size());
+
+#endif
+
+constexpr auto L1_T(Index n) { return interp_n2(ns, L1s_T, n); }
+constexpr auto L1_r(Index n) { return interp_n2(ns, L1s_r, n); }
+constexpr auto L1_r_dot(Index n) { return interp_n2(ns, L1s_r_dot, n); }
+
+}  // namespace Expected
+
+// =================================================================================================
 template <typename Float, Layout LAYOUT>
 constexpr auto ale_adjust_dt(const Grid<Float, LAYOUT>& grid,
                              const Vec2<Float>& w_,
@@ -71,28 +146,48 @@ constexpr auto ale_adjust_dt(const Grid<Float, LAYOUT>& grid,
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
 void correct_outflow(const Grid<Float, LAYOUT>& grid, FaceVector<Float, LAYOUT> u) {
-  using Metric   = Metric::SymmetricSpherical;
+#if DIMENSION == 2
+  using Metric = Metric::Polar;
+#else
+  using Metric = Metric::SymmetricSpherical;
+#endif
 
-  const Index jt = u.y.ny() - 1;
-  Float Qin      = 0.0;
-  Float Qout     = 0.0;
-  Float A_out    = 0.0;
+  const Index jtop = u.y.ny() - 1;
+  Float Q_in       = 0.0;
+  Float Q_out      = 0.0;
+  Float A_out      = 0.0;
   for (Index i = 0; i < u.y.nx(); ++i) {
-    const auto A_b  = Metric::H(grid.xm(i), grid.y(0)) / Metric::h2(grid.xm(i), grid.y(0));
-    const auto A_t  = Metric::H(grid.xm(i), grid.y(jt)) / Metric::h2(grid.xm(i), grid.y(jt));
-    Qin            += u.y(i, 0) * A_b;
-    Qout           += u.y(i, jt) * A_t;
-    A_out          += A_t;
+    const auto A_bot  = Metric::H(grid.xm(i), grid.y(0)) / Metric::h2(grid.xm(i), grid.y(0));
+    const auto A_top  = Metric::H(grid.xm(i), grid.y(jtop)) / Metric::h2(grid.xm(i), grid.y(jtop));
+    Q_in             += u.y(i, 0) * A_bot;
+    Q_out            += u.y(i, jtop) * A_top;
+    A_out            += A_top;
   }
-  const Float corr = (Qin - Qout) / A_out;
+  const Float corr = (Q_in - Q_out) / A_out;
   for (Index i = 0; i < u.y.nx(); ++i) {
-    u.y(i, jt) += corr;
+    u.y(i, jtop) += corr;
   }
 }
 
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
 constexpr auto calc_m_dot_total(const Grid<Float, LAYOUT>& grid, Scalar<Float, LAYOUT> T) -> Float {
+#if DIMENSION == 2
+  const auto m_dot_total = grid.transform_reduce_range(
+      0,
+      grid.nx(),
+      0,
+      1,
+      0.0,
+      [=](Index i, Index /*j*/) -> Float {
+        // Second order one-sided finite differences on non-uniform grid
+        const auto dTdr  = (-8.0 * Tsat + 9.0 * T(i, 0) - T(i, 1)) / (3.0 * grid.dr());
+        const auto m_dot = kappal * dTdr / hev;  // Assume dTdr=0 in the gas phase
+        return m_dot;
+      },
+      std::plus<>{});
+  return m_dot_total * 2.0 * grid.dtheta() * grid.r_min();
+#else
   const auto m_dot_total = grid.transform_reduce_range(
       0,
       grid.nx(),
@@ -107,12 +202,16 @@ constexpr auto calc_m_dot_total(const Grid<Float, LAYOUT>& grid, Scalar<Float, L
       },
       std::plus<>{});
   return m_dot_total * 2.0 * pi * Igor::sqr(grid.r_min());
+#endif
 }
 
 template <typename Float>
 constexpr auto calc_r_dot(Float r, Float m_dot_total) -> Float {
-  // 3D:
+#if DIMENSION == 2
+  return m_dot_total / (2.0 * pi * r * rhog);
+#else
   return m_dot_total / (4.0 * pi * Igor::sqr(r) * rhog);
+#endif
 }
 
 // =================================================================================================
@@ -130,10 +229,18 @@ auto main(int argc, char** argv) -> int {
     return 1;
   }
 
-  const auto output_dir = get_output_directory();
+  const auto output_dir =
+      "./test/output/Scriven-" + std::to_string(DIMENSION) + "D-" + std::to_string(N) + "/";
   if (!init_output_directory(output_dir)) { return 1; }
 
-  Grid<Float> grid(theta_min, theta_max, N, r_min, r_max, N, 3, Coordinates::SYMMETRIC_SPHERICAL);
+  Grid<Float> grid(theta_min,
+                   theta_max,
+                   N,
+                   r_min,
+                   r_max,
+                   N,
+                   3,
+                   DIMENSION == 2 ? Coordinates::POLAR : Coordinates::SYMMETRIC_SPHERICAL);
   auto u_old = grid.alloc_face_vector();
   auto u     = grid.alloc_face_vector();
   auto ui    = grid.alloc_vector();
@@ -142,7 +249,9 @@ auto main(int argc, char** argv) -> int {
   auto FUY   = grid.alloc_vertex_scalar();
   auto FVX   = grid.alloc_vertex_scalar();
   auto FVY   = grid.alloc_scalar();
-  auto FWZ   = grid.alloc_scalar();
+#if DIMENSION == 3
+  auto FWZ = grid.alloc_scalar();
+#endif
 
   auto div   = grid.alloc_scalar();
   auto p     = grid.alloc_scalar();
@@ -152,6 +261,10 @@ auto main(int argc, char** argv) -> int {
   auto T     = grid.alloc_scalar();
   auto FT    = grid.alloc_face_vector();
 
+  auto J_old = grid.alloc_scalar();
+  auto J     = grid.alloc_scalar();
+  calc_H(grid, J);
+
   Scriven::Params params{
       .Ja        = Ja,
       .eps       = eps,
@@ -159,7 +272,7 @@ auto main(int argc, char** argv) -> int {
       .Tsat      = Tsat,
       .Tinf      = Tinf,
       .beta      = 0.0,
-      .dimension = 3,
+      .dimension = DIMENSION,
   };
   Scriven::calc_beta(params);
   Igor::Info("Scriven::Params = {{");
@@ -298,20 +411,24 @@ auto main(int argc, char** argv) -> int {
   monitor.add_variable(&r_dot, "r_dot");
   monitor.add_variable(&r, "r");
   monitor.add_variable(&beta_eff, "beta_eff");
-  monitor.add_variable(&r_abserr, "abserr(r)");
-  monitor.add_variable(&r_dot_abserr, "abserr(r_dot)");
-  monitor.add_variable(&beta_abserr, "abserr(beta)");
-  monitor.add_variable(&r_relerr, "relerr(r)");
-  monitor.add_variable(&r_dot_relerr, "relerr(r_dot)");
-  monitor.add_variable(&beta_relerr, "relerr(beta)");
-  monitor.add_variable(&div_max, "absmax(div)");
   monitor.add_variable(&mg_res, "res(MG)");
   monitor.add_variable(&mg_cycles, "cycles(MG)");
   monitor.write();
+
+  Monitor<Float> error_monitor(output_dir + "/error.log");
+  error_monitor.add_variable(&r_abserr, "abserr(r)");
+  error_monitor.add_variable(&r_dot_abserr, "abserr(r_dot)");
+  error_monitor.add_variable(&beta_abserr, "abserr(beta)");
+  error_monitor.add_variable(&r_relerr, "relerr(r)");
+  error_monitor.add_variable(&r_dot_relerr, "relerr(r_dot)");
+  error_monitor.add_variable(&beta_relerr, "relerr(beta)");
+  error_monitor.add_variable(&div_max, "absmax(div)");
+  error_monitor.write();
   // - Output ------------------------------------------------------------------
 
-  IGOR_TIME_SCOPE("Solver")
-  while (t < tend) {
+  bool any_failed = false;
+  IGOR_TIME_SCOPE("Scriven-" + std::to_string(DIMENSION) + "D-" + std::to_string(N))
+  while (t < tend && !any_failed) {
     dt = std::min({
         adjust_dt(grid, u, rhol, mul, CFL),
         advection_adjust_dt(grid, alphal, CFL),
@@ -322,9 +439,9 @@ auto main(int argc, char** argv) -> int {
 
     copy(u, u_old);
     copy(T, T_old);
+    copy(J, J_old);
 
     mg_cycles = 0;
-    Vec2<Float> w0{};
     for (Index sub_iter = 0; sub_iter < 2; ++sub_iter) {
       const auto local_dt = sub_iter == 0 ? 0.5 * dt : dt;
 
@@ -333,39 +450,76 @@ auto main(int argc, char** argv) -> int {
       r_dot            = calc_r_dot(grid.y_min(), m_dot_total);
       w.r()            = r_dot;
       ur_bconds.bottom = Dirichlet<Float>{.val = eps * w.r()};
-      if (sub_iter == 0) { w0 = w; }
 
-      // 2) Prediction
-      calc_mom_flux(grid, u, p, rhol, mul, w, FUX, FUY, FVX, FVY, FWZ);
-      calc_advection_flux(grid, u, T, w, alphal, FT);
-      update_u(grid, local_dt, w, FUX, FUY, FVX, FVY, FWZ, u_old, u);
+      // 2) Update J
+      update_J(grid, local_dt, w, J_old, J);
+
+      // 3) Prediction
+      calc_mom_flux(grid,
+                    u,
+                    p,
+                    rhol,
+                    mul,
+                    w,
+                    FUX,
+                    FUY,
+                    FVX,
+                    FVY
+#if DIMENSION == 3
+                    ,
+                    FWZ
+#endif
+      );
+
+      update_u(grid,
+               local_dt,
+               J_old,
+               J,
+               FUX,
+               FUY,
+               FVX,
+               FVY,
+#if DIMENSION == 3
+               FWZ,
+#endif
+               u_old,
+               u);
       apply_velocity_bconds(grid, uth_bconds, ur_bconds, u);
-
-      // 3) Update the physical position of the grid
-      grid.move_grid_by_velocity(w, 0.5 * dt);
-      solver.move_grid_by_velocity(w, 0.5 * dt);
       correct_outflow(grid, u);
 
       // 4) Pressure calculation
+      // 4.1) Move grid for pressure correction
+      grid.move_grid_by_velocity(w, 0.5 * dt);
+      solver.move_grid_by_velocity(w, 0.5 * dt);
+      // 4.2) Actual correction
       calc_div(grid, u, div);
       grid.foreach_i(FOREACH_FUNC { div(i, j) *= rhol / local_dt; });
       if (!solver.solve(dp, div, 1e-6 / local_dt)) {
-        Igor::Warn("t={:.8f}: Multigrid solver did not converge after {} cycles: res = {:.8e}",
-                   t,
-                   solver.num_cycles(),
-                   solver.res());
+        Igor::Error("t={:.8f}: Multigrid solver did not converge after {} cycles: res = {:.8e}",
+                    t,
+                    solver.num_cycles(),
+                    solver.res());
+        any_failed = true;
       }
       mg_res     = solver.res();
       mg_cycles += solver.num_cycles();
       apply_bconds(grid, dp_bconds, dp, t);
 
       // 5) Projection
+      // 5.1) Actual projection
       correct_velocity(grid, dp, rhol, local_dt, u, p);
       apply_velocity_bconds_only_periodic(grid, uth_bconds, ur_bconds, u);
+      // 5.2) Move grid back for scalar transport
+      grid.move_grid_by_velocity(w, -0.5 * dt);
 
       // 6) Update temperature
-      update_s(grid, local_dt, sub_iter == 0 ? w : (w0 + w) / 2.0, FT, T_old, T);
+      calc_advection_flux(grid, u, T, w, alphal, FT);
+      update_s(grid, local_dt, J_old, J, FT, T_old, T);
       apply_bconds(grid, T_bconds, T, t);
+
+      // 7) Update the physical position of the grid
+      grid.move_grid_by_velocity(w, 0.5 * dt);
+      // solver.move_grid_by_velocity(w, 0.5 * dt); // Already moved in step 4.1)
     }
     calc_div(grid, u, div);
     interpolate(grid, u, ui);
@@ -389,7 +543,12 @@ auto main(int argc, char** argv) -> int {
     r_dot_relerr  = r_dot_abserr / Scriven::R_dot(t, params);
     beta_relerr   = beta_abserr / params.beta;
 
+    rs.push_back(r);
+    r_dots.push_back(r_dot);
+    ts.push_back(t);
+
     monitor.write();
+    error_monitor.write();
     if (should_save(t, dt, dt_write, tend)) {
       writer.update_grid(grid);
       if (!writer.write(t)) { return 1; }
@@ -409,15 +568,47 @@ auto main(int argc, char** argv) -> int {
       },
       std::plus<>{});
 
-  Igor::Info("N     = {}", N);
-  Igor::Info("L1(T) = {}", L1_T);
-  Igor::Info("abserr(r) = {}", r_abserr);
-  Igor::Info("abserr(r_dot) = {}", r_dot_abserr);
-  Igor::Info("abserr(beta) = {}", beta_abserr);
-  Igor::Info("relerr(r) = {}", r_relerr);
-  Igor::Info("relerr(r_dot) = {}", r_dot_relerr);
-  Igor::Info("relerr(beta) = {}", beta_relerr);
+  for (size_t i = 0; i < ts.size(); ++i) {
+    rs[i]     = std::abs(rs[i] - Scriven::R(ts[i], params));
+    r_dots[i] = std::abs(r_dots[i] - Scriven::R_dot(ts[i], params));
+  }
+  const auto L1_r     = simpson(std::span<const Float>{rs}, std::span<const Float>{ts});
+  const auto L1_r_dot = simpson(std::span<const Float>{r_dots}, std::span<const Float>{ts});
+
+  std::cout << '\n';
+  Igor::Info("N         = {}", N);
+  Igor::Info("L1(T)     = {:.12e}", L1_T);
+  Igor::Info("L1(r)     = {:.12e}", L1_r);
+  Igor::Info("L1(r_dot) = {:.12e}", L1_r_dot);
+  std::cout << '\n';
+  Igor::Info("abserr(r)     = {:.12e}", r_abserr);
+  Igor::Info("abserr(r_dot) = {:.12e}", r_dot_abserr);
+  Igor::Info("abserr(beta)  = {:.12e}", beta_abserr);
+  Igor::Info("relerr(r)     = {:.12e}", r_relerr);
+  Igor::Info("relerr(r_dot) = {:.12e}", r_dot_relerr);
+  Igor::Info("relerr(beta)  = {:.12e}", beta_relerr);
   std::cout << '\n';
 
-  Igor::Info("Ok.");
+  if (L1_T > 1.1 * Expected::L1_T(N) || std::isnan(L1_T)) {
+    Igor::Error("T error does not match expected value: expected {:.8e} but got {:.8e}",
+                Expected::L1_T(N),
+                L1_T);
+    any_failed = true;
+  }
+
+  if (L1_r > 1.1 * Expected::L1_r(N) || std::isnan(L1_T)) {
+    Igor::Error("r error does not match expected value: expected {:.8e} but got {:.8e}",
+                Expected::L1_r(N),
+                L1_r);
+    any_failed = true;
+  }
+
+  if (L1_r_dot > 1.1 * Expected::L1_r_dot(N) || std::isnan(L1_T)) {
+    Igor::Error("r_dot error does not match expected value: expected {:.8e} but got {:.8e}",
+                Expected::L1_r_dot(N),
+                L1_r_dot);
+    any_failed = true;
+  }
+
+  return any_failed ? 1 : 0;
 }

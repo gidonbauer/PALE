@@ -70,7 +70,7 @@ auto main(int argc, char** argv) -> int {
     coords = Coordinates::CARTESIAN;
   } else if (coords_str == "Polar" || coords_str == "polar") {
     coords = Coordinates::POLAR;
-  } else if (coords_str == "Spherical" || coords_str == "spherical") {
+  } else if (coords_str == "Symmetric-Spherical" || coords_str == "symmetric-spherical") {
     coords = Coordinates::SYMMETRIC_SPHERICAL;
   } else {
     Igor::Error("{}", usage_str);
@@ -86,28 +86,26 @@ auto main(int argc, char** argv) -> int {
   auto J_old = grid.alloc_scalar();
   auto J     = grid.alloc_scalar();
 
-  auto H0    = grid.alloc_scalar();
-  auto H_rel = grid.alloc_scalar();
+  auto H     = grid.alloc_scalar();
   auto J_err = grid.alloc_scalar();
 
   Float t    = 0.0;
   Float dt   = 1e-2;
 
-  fill(J, 1.0);
+  calc_H(grid, J);
 
-  calc_H(grid, H0);
-  calc_H_rel(grid, H0, H_rel);
+  calc_H(grid, H);
 
   const Vec2<Float> w{.x = 0.0, .y = 1.0};
 
   HDFWriter writer(output_dir, grid);
   writer.add_field("J", J);
-  writer.add_field("H_rel", H_rel);
+  writer.add_field("H", H);
   writer.add_field("J_err", J_err);
   if (!writer.write(t)) { return 1; }
 
   auto stats_J      = stats(grid, J);
-  auto stats_H_rel  = stats(grid, H_rel);
+  auto stats_H      = stats(grid, H);
   auto stats_J_err  = stats(grid, J_err);
   auto absmax_J_err = std::max(std::abs(stats_J_err.min), std::abs(stats_J_err.max));
 
@@ -117,9 +115,9 @@ auto main(int argc, char** argv) -> int {
   monitor.add_variable(&stats_J.min, "min(J)");
   monitor.add_variable(&stats_J.max, "max(J)");
   monitor.add_variable(&stats_J.sum, "sum(J)");
-  monitor.add_variable(&stats_H_rel.min, "min(H_rel)");
-  monitor.add_variable(&stats_H_rel.max, "max(H_rel)");
-  monitor.add_variable(&stats_H_rel.sum, "sum(H_rel)");
+  monitor.add_variable(&stats_H.min, "min(H)");
+  monitor.add_variable(&stats_H.max, "max(H)");
+  monitor.add_variable(&stats_H.sum, "sum(H)");
   monitor.add_variable(&absmax_J_err, "absmax(J_err)");
   monitor.write();
 
@@ -131,14 +129,14 @@ auto main(int argc, char** argv) -> int {
     for (Index sub_iter = 0; sub_iter < 2; ++sub_iter) {
       const auto local_dt = sub_iter == 0 ? dt / 2.0 : dt;
 
-      update_J(grid, local_dt, w, H0, J_old, J);
+      update_J(grid, local_dt, w, J_old, J);
       grid.move_grid_by_velocity(w, 0.5 * dt);
     }
-    calc_H_rel(grid, H0, H_rel);
-    grid.foreach_i(FOREACH_FUNC { J_err(i, j) = J(i, j) - H_rel(i, j); });
+    calc_H(grid, H);
+    grid.foreach_i(FOREACH_FUNC { J_err(i, j) = J(i, j) - H(i, j); });
 
     stats_J       = stats(grid, J);
-    stats_H_rel   = stats(grid, H_rel);
+    stats_H       = stats(grid, H);
     stats_J_err   = stats(grid, J_err);
     absmax_J_err  = std::max(std::abs(stats_J_err.min), std::abs(stats_J_err.max));
 
@@ -152,7 +150,7 @@ auto main(int argc, char** argv) -> int {
   }
 
   const auto L1 = grid.transform_reduce_i(
-      0.0, FOREACH_FUNC { return std::abs(J(i, j) - H_rel(i, j)) * grid.dv(i, j); }, std::plus<>{});
+      0.0, FOREACH_FUNC { return std::abs(J(i, j) - H(i, j)) * grid.dv(i, j); }, std::plus<>{});
   Igor::Info("L1(J) = {:.12e}", L1);
 
   constexpr Float tol = 1e-12;

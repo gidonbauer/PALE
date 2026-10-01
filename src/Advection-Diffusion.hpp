@@ -109,20 +109,7 @@ constexpr void update_s(const Grid<Float, LAYOUT>& grid,
     const auto dFdq2 =
         (H_top / h2_top * F.top(i, j) - H_bottom / h2_bottom * F.bottom(i, j)) / grid.dy();
 
-    // const auto H_old  = Metric::H(grid.xm(i) - Delta_old.x, grid.ym(j) - Delta_old.y);
-    // const auto H_flux = Metric::H(grid.xm(i) - Delta_flux.x, grid.ym(j) - Delta_flux.y);
-    const auto inv_H = 1.0 / Metric::H(grid.xm(i), grid.ym(j));
-
-    // const auto div_w =
-    //     inv_H *
-    //     (w.x * (Metric::h2(grid.xm(i), grid.ym(j)) * Metric::dh3_dq1(grid.xm(i), grid.ym(j)) +
-    //             Metric::h3(grid.xm(i), grid.ym(j)) * Metric::dh2_dq1(grid.xm(i), grid.ym(j))) +
-    //      w.y * (Metric::h1(grid.xm(i), grid.ym(j)) * Metric::dh3_dq2(grid.xm(i), grid.ym(j)) +
-    //             Metric::h3(grid.xm(i), grid.ym(j)) * Metric::dh1_dq2(grid.xm(i), grid.ym(j))));
-
-    s(i, j) = (J_old(i, j) * s_old(i, j) - dt * inv_H * (dFdq1 + dFdq2)) / J(i, j);
-    // s(i, j) = s_old(i, j) - dt * (inv_H * (dFdq1 + dFdq2) + s(i, j) * div_w);
-    // s(i, j) = (H_old * s_old(i, j) - dt * (dFdq1 + dFdq2)) * inv_H;
+    s(i, j) = (J_old(i, j) * s_old(i, j) - dt * (dFdq1 + dFdq2)) / J(i, j);
   });
 }
 

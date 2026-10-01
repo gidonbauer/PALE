@@ -4,6 +4,7 @@
 #include <Igor/Math.hpp>
 #include <Igor/Timer.hpp>
 
+#include "ALE.hpp"
 #include "Advection-Diffusion.hpp"
 #include "BoundaryConditions.hpp"
 #include "Common.hpp"
@@ -194,6 +195,10 @@ auto main(int argc, char** argv) -> int {
   auto T     = grid.alloc_scalar();
   auto FT    = grid.alloc_face_vector();
 
+  auto J_old = grid.alloc_scalar();
+  auto J     = grid.alloc_scalar();
+  calc_H(grid, J);
+
   Scriven::Params params{
       .Ja        = Ja,
       .eps       = eps,
@@ -204,25 +209,25 @@ auto main(int argc, char** argv) -> int {
       .dimension = DIMENSION,
   };
   Scriven::calc_beta(params);
-  Igor::Info("Scriven::Params = {{");
-  Igor::Info("  .Ja        = {}", params.Ja);
-  Igor::Info("  .eps       = {}", params.eps);
-  Igor::Info("  .alpha     = {}", params.alpha);
-  Igor::Info("  .Tsat      = {}", params.Tsat);
-  Igor::Info("  .Tinf      = {}", params.Tinf);
-  Igor::Info("  .beta      = {}", params.beta);
-  Igor::Info("  .dimension = {}", params.dimension);
-  Igor::Info("}}");
+  // Igor::Info("Scriven::Params = {{");
+  // Igor::Info("  .Ja        = {}", params.Ja);
+  // Igor::Info("  .eps       = {}", params.eps);
+  // Igor::Info("  .alpha     = {}", params.alpha);
+  // Igor::Info("  .Tsat      = {}", params.Tsat);
+  // Igor::Info("  .Tinf      = {}", params.Tinf);
+  // Igor::Info("  .beta      = {}", params.beta);
+  // Igor::Info("  .dimension = {}", params.dimension);
+  // Igor::Info("}}");
 
   Float t              = Scriven::t(r_min, params);
   const Float tend     = Scriven::t(r_end, params);
   const Float dt_write = tend / 100.0;
   Float dt             = dt_write;
 
-  Igor::Info("t0   = {}", t);
-  Igor::Info("tend = {}", tend);
-  Igor::Info("R0   = {}", r_min);
-  Igor::Info("Rend = {}", r_end);
+  // Igor::Info("t0   = {}", t);
+  // Igor::Info("tend = {}", tend);
+  // Igor::Info("R0   = {}", r_min);
+  // Igor::Info("Rend = {}", r_end);
 
   // - Write setup to JSON -------------------------------------------------------------------------
   {
@@ -282,14 +287,14 @@ auto main(int argc, char** argv) -> int {
   };
   MultigridSolver solver(grid, dp_bconds);
 
-  const BConds<Float> s_bconds{
+  const BConds<Float> T_bconds{
       .left   = Neumann(),
       .right  = Neumann(),
       .bottom = Dirichlet<Float>{.val = Tsat},
       .top    = Dirichlet<Float>{.val = Tinf},
   };
   grid.foreach_i(FOREACH_FUNC { T(i, j) = Scriven::T(grid.rm(j), t, params); });
-  apply_bconds(grid, s_bconds, T, t);
+  apply_bconds(grid, T_bconds, T, t);
 
   // - Output ------------------------------------------------------------------
   HDFWriter writer(output_dir, grid);
@@ -367,39 +372,40 @@ auto main(int argc, char** argv) -> int {
 
     copy(u, u_old);
     copy(T, T_old);
+    copy(J, J_old);
 
     mg_cycles = 0;
-    // Vec2<Float> w0{};
-    // 1) Mass exchange -> grid velocity
-    m_dot_total      = calc_m_dot_total(grid, T);
-    r_dot            = calc_r_dot(grid.y_min(), m_dot_total);
-    w.r()            = r_dot;
-    ur_bconds.bottom = Dirichlet<Float>{.val = eps * w.r()};
     for (Index sub_iter = 0; sub_iter < 2; ++sub_iter) {
       const auto local_dt = sub_iter == 0 ? 0.5 * dt : dt;
 
-      // if (sub_iter == 0) { w0 = w; }
+      // 1) Mass exchange -> grid velocity
+      m_dot_total      = calc_m_dot_total(grid, T);
+      r_dot            = calc_r_dot(grid.y_min(), m_dot_total);
+      w.r()            = r_dot;
+      ur_bconds.bottom = Dirichlet<Float>{.val = eps * w.r()};
 
-      // 2) Prediction
+      // 2) Update J
+      update_J(grid, local_dt, w, J_old, J);
+
+      // 3) Prediction
 #if DIMENSION == 2
       calc_mom_flux(grid, u, p, rhol, mul, w, FUX, FUY, FVX, FVY);
 #else
       calc_mom_flux(grid, u, p, rhol, mul, w, FUX, FUY, FVX, FVY, FWZ);
 #endif
-      calc_advection_flux(grid, u, T, w, alphal, FT);
 #if DIMENSION == 2
-      update_u(grid, local_dt, w, FUX, FUY, FVX, FVY, u_old, u);
+      update_u(grid, local_dt, J_old, J, FUX, FUY, FVX, FVY, u_old, u);
 #else
-      update_u(grid, local_dt, w, FUX, FUY, FVX, FVY, FWZ, u_old, u);
+      update_u(grid, local_dt, J_old, J, FUX, FUY, FVX, FVY, FWZ, u_old, u);
 #endif
       apply_velocity_bconds(grid, uth_bconds, ur_bconds, u);
-
-      // 3) Update the physical position of the grid
-      grid.move_grid_by_velocity(w, 0.5 * dt);
-      solver.move_grid_by_velocity(w, 0.5 * dt);
       correct_outflow(grid, u);
 
       // 4) Pressure calculation
+      // 4.1) Move grid for pressure correction
+      grid.move_grid_by_velocity(w, 0.5 * dt);
+      solver.move_grid_by_velocity(w, 0.5 * dt);
+      // 4.2) Actual correction
       calc_div(grid, u, div);
       grid.foreach_i(FOREACH_FUNC { div(i, j) *= rhol / local_dt; });
       if (!solver.solve(dp, div, 1e-6 / local_dt)) {
@@ -413,13 +419,20 @@ auto main(int argc, char** argv) -> int {
       apply_bconds(grid, dp_bconds, dp, t);
 
       // 5) Projection
+      // 5.1) Actual projection
       correct_velocity(grid, dp, rhol, local_dt, u, p);
       apply_velocity_bconds_only_periodic(grid, uth_bconds, ur_bconds, u);
+      // 5.2) Move grid back for scalar transport
+      grid.move_grid_by_velocity(w, -0.5 * dt);
 
       // 6) Update temperature
-      // update_s(grid, local_dt, sub_iter == 0 ? w : (w0 + w) / 2.0, FT, T_old, T);
-      update_s(grid, local_dt, w, FT, T_old, T);
-      apply_bconds(grid, s_bconds, T, t);
+      calc_advection_flux(grid, u, T, w, alphal, FT);
+      update_s(grid, local_dt, J_old, J, FT, T_old, T);
+      apply_bconds(grid, T_bconds, T, t);
+
+      // 7) Update the physical position of the grid
+      grid.move_grid_by_velocity(w, 0.5 * dt);
+      // solver.move_grid_by_velocity(w, 0.5 * dt); // Already moved in step 4.1)
     }
     calc_div(grid, u, div);
     interpolate(grid, u, ui);
@@ -481,13 +494,13 @@ auto main(int argc, char** argv) -> int {
   Igor::Info("L1(r)     = {:.12e}", L1_r);
   Igor::Info("L1(r_dot) = {:.12e}", L1_r_dot);
   std::cout << '\n';
-  Igor::Info("abserr(r)     = {:.12e}", r_abserr);
-  Igor::Info("abserr(r_dot) = {:.12e}", r_dot_abserr);
-  Igor::Info("abserr(beta)  = {:.12e}", beta_abserr);
-  Igor::Info("relerr(r)     = {:.12e}", r_relerr);
-  Igor::Info("relerr(r_dot) = {:.12e}", r_dot_relerr);
-  Igor::Info("relerr(beta)  = {:.12e}", beta_relerr);
-  std::cout << '\n';
+  // Igor::Info("abserr(r)     = {:.12e}", r_abserr);
+  // Igor::Info("abserr(r_dot) = {:.12e}", r_dot_abserr);
+  // Igor::Info("abserr(beta)  = {:.12e}", beta_abserr);
+  // Igor::Info("relerr(r)     = {:.12e}", r_relerr);
+  // Igor::Info("relerr(r_dot) = {:.12e}", r_dot_relerr);
+  // Igor::Info("relerr(beta)  = {:.12e}", beta_relerr);
+  // std::cout << '\n';
 
-  Igor::Info("Ok.");
+  // Igor::Info("Ok.");
 }

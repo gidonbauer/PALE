@@ -4,6 +4,7 @@
 #include <Igor/Math.hpp>
 #include <Igor/Timer.hpp>
 
+#include "ALE.hpp"
 #include "Advection-Diffusion.hpp"
 #include "BoundaryConditions.hpp"
 #include "Common.hpp"
@@ -48,38 +49,6 @@ constexpr auto ale_adjust_dt(const Grid<Float, LAYOUT>& grid,
   return adv > 0.0 ? CFL_ / adv : no_limit;
 }
 
-template <typename Float, Layout LAYOUT>
-constexpr void ale_calc_J_flux(const Grid<Float, LAYOUT>& grid, FaceVector<Float, LAYOUT> F) {
-  grid.template foreach_face_i<Dimension::X>(FOREACH_FUNC { F.x(i, j) = w.x; });
-  grid.template foreach_face_i<Dimension::Y>(FOREACH_FUNC { F.y(i, j) = w.y; });
-}
-
-template <typename Float, Layout LAYOUT>
-constexpr void ale_update_J(const Grid<Float, LAYOUT>& grid,
-                            Float dt,
-                            const FaceVector<Float, LAYOUT> F,
-                            const Scalar<Float, LAYOUT> J_old,
-                            Scalar<Float, LAYOUT> J) {
-  switch (grid.coords()) {
-    case Coordinates::CARTESIAN:
-      grid.foreach_i(FOREACH_FUNC {
-        J(i, j) = J_old(i, j) + dt * J_old(i, j) *
-                                    ((F.right(i, j) - F.left(i, j)) / grid.dx() +
-                                     (F.top(i, j) - F.bottom(i, j)) / grid.dy());
-      });
-      return;
-    case Coordinates::POLAR:
-      grid.foreach_i(FOREACH_FUNC {
-        const auto dFthdth = (F.right(i, j) - F.left(i, j)) / grid.dx();
-        const auto dFrdr   = (F.top(i, j) - F.bottom(i, j)) / grid.dy();
-        const auto Fr      = (F.top(i, j) + F.bottom(i, j)) / 2.0;
-        const auto r       = grid.ym(j);
-        J(i, j)            = J_old(i, j) + dt * J_old(i, j) * (dFrdr + dFthdth / r + Fr / r);
-      });
-      return;
-    case Coordinates::SYMMETRIC_SPHERICAL: Igor::Todo();
-  }
-}
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
 void correct_outflow(const Grid<Float, LAYOUT>& grid, FaceVector<Float, LAYOUT> u) {
@@ -134,7 +103,6 @@ auto main(int argc, char** argv) -> int {
 
   auto J_old  = grid.alloc_scalar();
   auto J      = grid.alloc_scalar();
-  auto FJ     = grid.alloc_face_vector();
 
   auto J_real = grid.alloc_scalar();
   auto r0     = grid.alloc_scalar();
@@ -142,7 +110,7 @@ auto main(int argc, char** argv) -> int {
   Float t     = 0.0;
   Float dt    = 1e-1;
 
-  fill(J, 1.0);
+  calc_H(grid, J);
   grid.foreach_i(FOREACH_FUNC { r0(i, j) = grid.r(j); });
   grid.foreach_i(FOREACH_FUNC { J_real(i, j) = grid.r(j) / r0(i, j); });
 
@@ -239,22 +207,16 @@ auto main(int argc, char** argv) -> int {
       const auto local_dt = sub_iter == 0 ? 0.5 * dt : dt;
 
       // 1) Update J
-      ale_calc_J_flux(grid, FJ);
-      ale_update_J(grid, local_dt, FJ, J_old, J);
-      apply_bconds(grid, dp_bconds, J, t);
+      update_J(grid, local_dt, w, J_old, J);
+      // apply_bconds(grid, dp_bconds, J, t);
 
       // 2) Prediction
       calc_mom_flux(grid, u, p, rho, mu, w, FUX, FUY, FVX, FVY);
-      calc_advection_flux(grid, u, s, w, D, Fs);
-      update_u(grid, local_dt, w, FUX, FUY, FVX, FVY, u_old, u);
+      update_u(grid, local_dt, J_old, J, FUX, FUY, FVX, FVY, u_old, u);
       apply_velocity_bconds(grid, uth_bconds, ur_bconds, u);
-
-      // 3) Update the physical position of the grid
-      grid.move_grid_by_velocity(w, 0.5 * dt);
-      solver.move_grid_by_velocity(w, 0.5 * dt);
       correct_outflow(grid, u);
 
-      // 4) Pressure calculation
+      // 3) Pressure calculation
       calc_div(grid, u, div);
       grid.foreach_i(FOREACH_FUNC { div(i, j) *= rho / local_dt; });
       if (!solver.solve(dp, div, 1e-6 / local_dt)) {
@@ -267,13 +229,18 @@ auto main(int argc, char** argv) -> int {
       mg_cycles += solver.num_cycles();
       apply_bconds(grid, dp_bconds, dp, t);
 
-      // 5) Projection
+      // 4) Projection
       correct_velocity(grid, dp, rho, local_dt, u, p);
       apply_velocity_bconds_only_periodic(grid, uth_bconds, ur_bconds, u);
 
-      // 6) Update scalar
-      update_s(grid, local_dt, w, Fs, s_old, s);
+      // 5) Update scalar
+      calc_advection_flux(grid, u, s, w, D, Fs);
+      update_s(grid, local_dt, J_old, J, Fs, s_old, s);
       apply_bconds(grid, s_bconds, s, t);
+
+      // 6) Update the physical position of the grid
+      grid.move_grid_by_velocity(w, 0.5 * dt);
+      solver.move_grid_by_velocity(w, 0.5 * dt);
     }
     calc_div(grid, u, div);
     interpolate(grid, u, ui);
