@@ -1,6 +1,5 @@
 #include <charconv>
-
-#include <poisfft.h>
+#include <numbers>
 
 #include <Igor/Defer.hpp>
 #include <Igor/Logging.hpp>
@@ -9,32 +8,39 @@
 
 #include "BoundaryConditions.hpp"
 #include "Common.hpp"
+#include "Geometry.hpp"
 #include "Grid.hpp"
 #include "HDFWriter.hpp"
+#include "IB.hpp"
 #include "IO.hpp"
 #include "Mac.hpp"
 #include "Monitor.hpp"
+#include "MultigridPoisson.hpp"
+#include "Quadrature.hpp"
 
-using Float              = double;
+using Float               = double;
+constexpr Float pi        = std::numbers::pi_v<Float>;
 
-constexpr Float x_min    = 0.0;
-constexpr Float x_max    = 1.0;
-constexpr Float y_min    = 0.0;
-constexpr Float y_max    = 1.0;
+constexpr Float theta_min = 0.0;
+constexpr Float theta_max = pi;
+constexpr Float r_min     = 1.0;
+constexpr Float r_max     = 2.0;
 
-constexpr Float rho      = 1.0;
-constexpr Float mu       = 1.0;
-constexpr Float Uavg     = 1.0;
+constexpr Float rho       = 1.0;
+constexpr Float mu        = 1.0;
+constexpr Float Uavg      = 1.0;
 
-constexpr Float CFL      = 0.7;
-constexpr Float tend     = 5e-2;
-constexpr Float dt_write = tend / 100.0;
+constexpr Float CFL       = 0.7;
+constexpr Float tend      = 5e-2;
+constexpr Float dt_write  = tend / 100.0;
+
+constexpr Circle<Float> wall{.x = 0.0, .y = 1.5, .r = 0.125};
 
 // =================================================================================================
-constexpr auto inlet_u(Float y) -> Float {
-  constexpr Float H = y_max - y_min;
-  const Float s     = (y - y_min) / H;
-  return Uavg * 6.0 * s * (1.0 - s);
+template <typename Float>
+constexpr auto uth_analytical(Float r) -> Float {
+  return Uavg / 0.328189 *
+         (4.0 * std::numbers::ln2_v<Float> * (r - 1.0 / r) - 3.0 * r * std::log(r));
 }
 
 // =================================================================================================
@@ -71,39 +77,41 @@ auto main(int argc, char** argv) -> int {
   const auto output_dir = get_output_directory();
   if (!init_output_directory(output_dir)) { return 1; }
 
-  Grid<Float> grid(x_min, x_max, N, y_min, y_max, N, 1);
+  Grid<Float> grid(theta_min, theta_max, N, r_min, r_max, N, 1, Coordinates::POLAR);
 
-  auto u_old = grid.alloc_face_vector();
-  auto u     = grid.alloc_face_vector();
+  auto u_old   = grid.alloc_face_vector();
+  auto u       = grid.alloc_face_vector();
+  auto ui      = grid.alloc_vector();
 
-  auto FUX   = grid.alloc_scalar();
-  auto FUY   = grid.alloc_vertex_scalar();
-  auto FVX   = grid.alloc_vertex_scalar();
-  auto FVY   = grid.alloc_scalar();
+  auto FUX     = grid.alloc_scalar();
+  auto FUY     = grid.alloc_vertex_scalar();
+  auto FVX     = grid.alloc_vertex_scalar();
+  auto FVY     = grid.alloc_scalar();
 
-  auto ui    = grid.alloc_vector();
-  auto p     = grid.alloc_scalar();  // Pressure (accumulated across steps).
-  auto dp    = grid.alloc_scalar();  // Pressure correction of the current step.
-  auto div   = grid.alloc_scalar();
+  auto p       = grid.alloc_scalar();
+  auto dp      = grid.alloc_scalar();
+  auto div     = grid.alloc_scalar();
 
-  Float dt   = 0.0;
-  Float t    = 0.0;
+  auto ib_corr = grid.alloc_face_vector();
+  auto ib_wall = grid.alloc_scalar();
 
-  // = Linear solver ===============================================================================
-  const std::array<int, 2> ns   = {grid.nx(), grid.ny()};
-  const std::array<Float, 2> Ls = {grid.x_max() - grid.x_min(), grid.y_max() - grid.y_min()};
-  const std::array<int, 4> BCs  = {
-      PoisFFT::NEUMANN_STAG,
-      PoisFFT::NEUMANN_STAG,
-      PoisFFT::NEUMANN_STAG,
-      PoisFFT::NEUMANN_STAG,
-  };
-  PoisFFT::Solver<2, Float> solver(ns.data(), Ls.data(), BCs.data(), PoisFFT::FINITE_DIFFERENCE_2);
-  const std::array<int, 2> ngs = {grid.nghost(), grid.nghost()};
-  // = Linear solver ===============================================================================
+  Float dt     = 0.0;
+  Float t      = 0.0;
+
+  grid.foreach_i(FOREACH_FUNC {
+    ib_wall(i, j) = quadrature([](Float theta,
+                                  Float r) { return r * wall.contains(polar2cartesian(theta, r)); },
+                               grid.theta(i),
+                               grid.theta(i + 1),
+                               grid.r(j),
+                               grid.r(j + 1)) /
+                    grid.dv(i, j);
+  });
+
+  MultigridSolver solver(grid);
 
   const BConds<Float> u_bconds{
-      .left   = Dirichlet<Float>{.val = [](Float y, Float /*t*/) { return inlet_u(y); }},
+      .left   = Dirichlet<Float>{.val = [](Float r, Float /*t*/) { return uth_analytical(r); }},
       .right  = Neumann(),
       .bottom = Dirichlet<Float>{.val = 0.0},
       .top    = Dirichlet<Float>{.val = 0.0},
@@ -125,6 +133,7 @@ auto main(int argc, char** argv) -> int {
   writer.add_field("u", ui);
   writer.add_field("p", p);
   writer.add_field("div", div);
+  writer.add_field("wall", ib_wall);
   if (!writer.write(t)) { return 1; }
 
   Stats p_stats   = stats(grid, p);
@@ -133,6 +142,9 @@ auto main(int argc, char** argv) -> int {
   Stats div_stats = stats(grid, div);
   Float div_max   = std::max(std::abs(div_stats.min), std::abs(div_stats.max));
 
+  Float mg_res    = solver.res();
+  Index mg_cycles = solver.num_cycles();
+
   Monitor<Float> monitor(output_dir + "/monitor.log");
   monitor.add_variable(&t, "t");
   monitor.add_variable(&dt, "dt");
@@ -140,7 +152,11 @@ auto main(int argc, char** argv) -> int {
   monitor.add_variable(&u_stats.max, "max(u)");
   monitor.add_variable(&v_stats.max, "max(v)");
   monitor.add_variable(&div_max, "absmax(div)");
+  monitor.add_variable(&mg_res, "res(MG)");
+  monitor.add_variable(&mg_cycles, "cycles(MG)");
   monitor.write();
+
+  calc_ib_correction_shape(grid, wall, ib_corr);
 
   IGOR_TIME_SCOPE("Solver")
   while (t < tend) {
@@ -152,19 +168,32 @@ auto main(int argc, char** argv) -> int {
 
     copy(u, u_old);
 
+    mg_cycles = 0;
     for (Index sub_iter = 0; sub_iter < 2; ++sub_iter) {
       const auto local_dt = sub_iter == 0 ? dt / 2.0 : dt;
 
       // 1) Predictor
       calc_mom_flux(grid, u, p, rho, mu, FUX, FUY, FVX, FVY);
+#if 1
       update_u(grid, local_dt, FUX, FUY, FVX, FVY, u_old, u);
+      correct_velocity_ib_implicit_euler(grid, ib_corr, rho, mu, local_dt, u);
+#else
+      update_u_ib_semi_analytical(
+          grid, local_dt, None{}, None{}, FUX, FUY, FVX, FVY, None{}, mu, rho, ib_corr, u_old, u);
+#endif
       apply_velocity_bconds(grid, u_bconds, v_bconds, u);
       correct_outflow(grid, u);
 
       // 2) Pressure correction
       calc_div(grid, u, div);
       grid.foreach_i(FOREACH_FUNC { div(i, j) *= rho / local_dt; });
-      solver.execute(dp.data(), div.data(), ngs.data(), ngs.data());
+      if (!solver.solve(dp, div, 1e-3 / local_dt)) {
+        Igor::Warn("Multigrid solver did not converge after {} cycles: res={:.12e}",
+                   solver.num_cycles(),
+                   solver.res());
+      }
+      mg_cycles += solver.num_cycles();
+      mg_res     = solver.res();
       apply_neumann_bconds(grid, dp);
 
       // 3) Project

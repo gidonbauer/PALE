@@ -86,5 +86,7 @@ The output can be visualized with [ParaView](https://www.paraview.org/).
 
 ## TODO
 
-- Look into toroidal coordinate systems to model the bubble at the wall, see Popov, Y.O., 2005. Evaporative deposition patterns: Spatial dimensions of the deposit. Phys. Rev. E 71, 036313. https://doi.org/10.1103/PhysRevE.71.036313
+- [x] Look into toroidal coordinate systems to model the bubble at the wall: Does not look like a reasonable approach
+    - Popov, Y.O., 2005. Evaporative deposition patterns: Spatial dimensions of the deposit. Phys. Rev. E 71, 036313. https://doi.org/10.1103/PhysRevE.71.036313
+- [ ] Model the electrode via immersed boundaries
 

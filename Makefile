@@ -6,9 +6,12 @@ TARGETS = bin/advection-diffusion \
           bin/ale-polar \
           bin/ale-rotation \
           bin/scriven-2d \
-          bin/scriven-3d
+          bin/scriven-3d \
+          bin/bubble \
+          bin/ib-cartesian \
+          bin/ib-polar
 
-POISFFT_TARGETS = bin/advection-diffusion bin/mac bin/lid-driven-cavity bin/taylor-green
+POISFFT_TARGETS = bin/advection-diffusion bin/mac bin/lid-driven-cavity bin/taylor-green bin/ib-cartesian
 GSL_TARGETS = bin/old-scriven-3d bin/scriven-2d bin/scriven-3d
 
 CUSTOM_TARGETS = bin/scriven-2d bin/scriven-3d

@@ -9,11 +9,14 @@
 
 #include "BoundaryConditions.hpp"
 #include "Common.hpp"
+#include "Geometry.hpp"
 #include "Grid.hpp"
 #include "HDFWriter.hpp"
+#include "IB.hpp"
 #include "IO.hpp"
 #include "Mac.hpp"
 #include "Monitor.hpp"
+#include "Quadrature.hpp"
 
 using Float              = double;
 
@@ -29,6 +32,8 @@ constexpr Float Uavg     = 1.0;
 constexpr Float CFL      = 0.7;
 constexpr Float tend     = 5e-2;
 constexpr Float dt_write = tend / 100.0;
+
+constexpr Circle<Float> wall{.x = 0.5, .y = 0.5, .r = 0.125};
 
 // =================================================================================================
 constexpr auto inlet_u(Float y) -> Float {
@@ -73,21 +78,33 @@ auto main(int argc, char** argv) -> int {
 
   Grid<Float> grid(x_min, x_max, N, y_min, y_max, N, 1);
 
-  auto u_old = grid.alloc_face_vector();
-  auto u     = grid.alloc_face_vector();
+  auto u_old   = grid.alloc_face_vector();
+  auto u       = grid.alloc_face_vector();
+  auto ui      = grid.alloc_vector();
 
-  auto FUX   = grid.alloc_scalar();
-  auto FUY   = grid.alloc_vertex_scalar();
-  auto FVX   = grid.alloc_vertex_scalar();
-  auto FVY   = grid.alloc_scalar();
+  auto FUX     = grid.alloc_scalar();
+  auto FUY     = grid.alloc_vertex_scalar();
+  auto FVX     = grid.alloc_vertex_scalar();
+  auto FVY     = grid.alloc_scalar();
 
-  auto ui    = grid.alloc_vector();
-  auto p     = grid.alloc_scalar();  // Pressure (accumulated across steps).
-  auto dp    = grid.alloc_scalar();  // Pressure correction of the current step.
-  auto div   = grid.alloc_scalar();
+  auto p       = grid.alloc_scalar();
+  auto dp      = grid.alloc_scalar();
+  auto div     = grid.alloc_scalar();
 
-  Float dt   = 0.0;
-  Float t    = 0.0;
+  auto ib_corr = grid.alloc_face_vector();
+  auto ib_wall = grid.alloc_scalar();
+
+  Float dt     = 0.0;
+  Float t      = 0.0;
+
+  grid.foreach_i(FOREACH_FUNC {
+    ib_wall(i, j) = quadrature([](Float x, Float y) { return wall.contains({.x = x, .y = y}); },
+                               grid.x(i),
+                               grid.x(i + 1),
+                               grid.y(j),
+                               grid.y(j + 1)) /
+                    grid.dv(i, j);
+  });
 
   // = Linear solver ===============================================================================
   const std::array<int, 2> ns   = {grid.nx(), grid.ny()};
@@ -125,6 +142,7 @@ auto main(int argc, char** argv) -> int {
   writer.add_field("u", ui);
   writer.add_field("p", p);
   writer.add_field("div", div);
+  writer.add_field("wall", ib_wall);
   if (!writer.write(t)) { return 1; }
 
   Stats p_stats   = stats(grid, p);
@@ -142,6 +160,8 @@ auto main(int argc, char** argv) -> int {
   monitor.add_variable(&div_max, "absmax(div)");
   monitor.write();
 
+  calc_ib_correction_shape(grid, wall, ib_corr);
+
   IGOR_TIME_SCOPE("Solver")
   while (t < tend) {
     dt = std::min({
@@ -157,7 +177,13 @@ auto main(int argc, char** argv) -> int {
 
       // 1) Predictor
       calc_mom_flux(grid, u, p, rho, mu, FUX, FUY, FVX, FVY);
+#if 0
       update_u(grid, local_dt, FUX, FUY, FVX, FVY, u_old, u);
+      correct_velocity_ib_implicit_euler(grid, ib_corr, rho, mu, local_dt, u);
+#else
+      update_u_ib_semi_analytical(
+          grid, local_dt, None{}, None{}, FUX, FUY, FVX, FVY, None{}, mu, rho, ib_corr, u_old, u);
+#endif
       apply_velocity_bconds(grid, u_bconds, v_bconds, u);
       correct_outflow(grid, u);
 

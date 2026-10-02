@@ -2,5 +2,6 @@
 *.pdf
 *.md
 *.typ
+*.html
 build/
 figures/
