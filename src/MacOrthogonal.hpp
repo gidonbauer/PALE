@@ -110,6 +110,79 @@ constexpr void calc_mom_flux(const Grid<Float, LAYOUT>& grid,
 }
 
 // =================================================================================================
+// H times the divergence of the momentum flux tensor at the x-face (i, j),
+// i.e. du/dt = -bracket / H.
+template <typename Metric, typename Float, Layout LAYOUT, IsNoneOr<Scalar<Float, LAYOUT>> FWZ_t>
+[[nodiscard]] PALE_ALWAYS_INLINE constexpr auto
+calc_H_div_flux_x(const Grid<Float, LAYOUT>& grid,
+                  Index i,
+                  Index j,
+                  const Scalar<Float, LAYOUT> FUX,
+                  const VertexScalar<Float, LAYOUT> FUY,
+                  const VertexScalar<Float, LAYOUT> FVX,
+                  const Scalar<Float, LAYOUT> FVY,
+                  const FWZ_t FWZ) -> Float {
+  const auto dHT11_dq1 =
+      (Metric::H(grid.xm(i), grid.ym(j)) / Metric::h1(grid.xm(i), grid.ym(j)) * FUX(i, j) -
+       Metric::H(grid.xm(i - 1), grid.ym(j)) / Metric::h1(grid.xm(i - 1), grid.ym(j)) *
+           FUX(i - 1, j)) /
+      grid.dx();
+
+  const auto dHT21_dq2 =
+      (Metric::H(grid.x(i), grid.y(j + 1)) / Metric::h2(grid.x(i), grid.y(j + 1)) * FUY(i, j + 1) -
+       Metric::H(grid.x(i), grid.y(j)) / Metric::h2(grid.x(i), grid.y(j)) * FUY(i, j)) /
+      grid.dy();
+
+  const auto T12 = (FVX(i, j + 1) + FVX(i, j)) / 2.0;
+  const auto T22 = (FVY(i, j) + FVY(i - 1, j)) / 2.0;
+  const auto T33 = IF_NONE_ELSE(FWZ_t, 0.0, (FWZ(i, j) + FWZ(i - 1, j)) / 2.0);
+
+  const auto h2  = Metric::h2(grid.x(i), grid.ym(j));
+  const auto h3  = Metric::h3(grid.x(i), grid.ym(j));
+
+  return dHT11_dq1 + dHT21_dq2 +  //
+         h3 * T12 * Metric::dh1_dq2(grid.x(i), grid.ym(j)) -
+         h3 * T22 * Metric::dh2_dq1(grid.x(i), grid.ym(j)) -
+         h2 * T33 * Metric::dh3_dq1(grid.x(i), grid.ym(j));
+}
+
+// H times the divergence of the momentum flux tensor at the y-face (i, j),
+// i.e. dv/dt = -bracket / H.
+template <typename Metric, typename Float, Layout LAYOUT, IsNoneOr<Scalar<Float, LAYOUT>> FWZ_t>
+[[nodiscard]] PALE_ALWAYS_INLINE constexpr auto
+calc_H_div_flux_y(const Grid<Float, LAYOUT>& grid,
+                  Index i,
+                  Index j,
+                  const Scalar<Float, LAYOUT> FUX,
+                  const VertexScalar<Float, LAYOUT> FUY,
+                  const VertexScalar<Float, LAYOUT> FVX,
+                  const Scalar<Float, LAYOUT> FVY,
+                  const FWZ_t FWZ) -> Float {
+  const auto dHT12_dq1 =
+      (Metric::H(grid.x(i + 1), grid.y(j)) / Metric::h1(grid.x(i + 1), grid.y(j)) * FVX(i + 1, j) -
+       Metric::H(grid.x(i), grid.y(j)) / Metric::h1(grid.x(i), grid.y(j)) * FVX(i, j)) /
+      grid.dx();
+
+  const auto dHT22_dq2 =
+      (Metric::H(grid.xm(i), grid.ym(j)) / Metric::h2(grid.xm(i), grid.ym(j)) * FVY(i, j) -
+       Metric::H(grid.xm(i), grid.ym(j - 1)) / Metric::h2(grid.xm(i), grid.ym(j - 1)) *
+           FVY(i, j - 1)) /
+      grid.dy();
+
+  const auto T11 = (FUX(i, j) + FUX(i, j - 1)) / 2.0;
+  const auto T21 = (FUY(i + 1, j) + FUY(i, j)) / 2.0;
+  const auto T33 = IF_NONE_ELSE(FWZ_t, 0.0, (FWZ(i, j) + FWZ(i, j - 1)) / 2.0);
+
+  const auto h1  = Metric::h1(grid.xm(i), grid.y(j));
+  const auto h3  = Metric::h3(grid.xm(i), grid.y(j));
+
+  return dHT12_dq1 + dHT22_dq2 +  //
+         h3 * T21 * Metric::dh2_dq1(grid.xm(i), grid.y(j)) -
+         h3 * T11 * Metric::dh1_dq2(grid.xm(i), grid.y(j)) -
+         h1 * T33 * Metric::dh3_dq2(grid.xm(i), grid.y(j));
+}
+
+// =================================================================================================
 template <typename Metric,
           typename Float,
           Layout LAYOUT,
@@ -130,68 +203,26 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
                 "Provide `Scalar` for `FWZ` in quasi-3D case and `None` in 2D case.");
 
   grid.template foreach_face_i<Dimension::X>(FOREACH_FUNC {
-    const auto dHT11_dq1 =
-        (Metric::H(grid.xm(i), grid.ym(j)) / Metric::h1(grid.xm(i), grid.ym(j)) * FUX(i, j) -
-         Metric::H(grid.xm(i - 1), grid.ym(j)) / Metric::h1(grid.xm(i - 1), grid.ym(j)) *
-             FUX(i - 1, j)) /
-        grid.dx();
-
-    const auto dHT21_dq2 =
-        (Metric::H(grid.x(i), grid.y(j + 1)) / Metric::h2(grid.x(i), grid.y(j + 1)) *
-             FUY(i, j + 1) -
-         Metric::H(grid.x(i), grid.y(j)) / Metric::h2(grid.x(i), grid.y(j)) * FUY(i, j)) /
-        grid.dy();
-
-    const auto T12        = (FVX(i, j + 1) + FVX(i, j)) / 2.0;
-    const auto T22        = (FVY(i, j) + FVY(i - 1, j)) / 2.0;
-    const auto T33        = IF_NONE_ELSE(FWZ_t, 0.0, (FWZ(i, j) + FWZ(i - 1, j)) / 2.0);
-
-    const auto h2         = Metric::h2(grid.x(i), grid.ym(j));
-    const auto h3         = Metric::h3(grid.x(i), grid.ym(j));
     const auto inv_H      = 1.0 / Metric::H(grid.x(i), grid.ym(j));
 
     const auto Ji_old     = IF_NONE_ELSE(J_t, 1.0, (J_old(i, j) + J_old(i - 1, j)) / 2.0);
     const auto Ji         = IF_NONE_ELSE(J_t, 1.0, (J(i, j) + J(i - 1, j)) / 2.0);
     const auto div_factor = IF_NONE_ELSE(J_t, inv_H, 1.0);
 
-    u.x(i, j) = (Ji_old * u_old.x(i, j) - dt * div_factor *
-                                              (dHT11_dq1 + dHT21_dq2 +  //
-                                               h3 * T12 * Metric::dh1_dq2(grid.x(i), grid.ym(j)) -
-                                               h3 * T22 * Metric::dh2_dq1(grid.x(i), grid.ym(j)) -
-                                               h2 * T33 * Metric::dh3_dq1(grid.x(i), grid.ym(j)))) /
+    u.x(i, j) = (Ji_old * u_old.x(i, j) -
+                 dt * div_factor * calc_H_div_flux_x<Metric>(grid, i, j, FUX, FUY, FVX, FVY, FWZ)) /
                 Ji;
   });
 
   grid.template foreach_face_i<Dimension::Y>(FOREACH_FUNC {
-    const auto dHT12_dq1 =
-        (Metric::H(grid.x(i + 1), grid.y(j)) / Metric::h1(grid.x(i + 1), grid.y(j)) *
-             FVX(i + 1, j) -
-         Metric::H(grid.x(i), grid.y(j)) / Metric::h1(grid.x(i), grid.y(j)) * FVX(i, j)) /
-        grid.dx();
-
-    const auto dHT22_dq2 =
-        (Metric::H(grid.xm(i), grid.ym(j)) / Metric::h2(grid.xm(i), grid.ym(j)) * FVY(i, j) -
-         Metric::H(grid.xm(i), grid.ym(j - 1)) / Metric::h2(grid.xm(i), grid.ym(j - 1)) *
-             FVY(i, j - 1)) /
-        grid.dy();
-
-    const auto T11        = (FUX(i, j) + FUX(i, j - 1)) / 2.0;
-    const auto T21        = (FUY(i + 1, j) + FUY(i, j)) / 2.0;
-    const auto T33        = IF_NONE_ELSE(FWZ_t, 0.0, (FWZ(i, j) + FWZ(i, j - 1)) / 2.0);
-
-    const auto h1         = Metric::h1(grid.xm(i), grid.y(j));
-    const auto h3         = Metric::h3(grid.xm(i), grid.y(j));
     const auto inv_H      = 1.0 / Metric::H(grid.xm(i), grid.y(j));
 
     const auto Ji_old     = IF_NONE_ELSE(J_t, 1.0, (J_old(i, j) + J_old(i, j - 1)) / 2.0);
     const auto Ji         = IF_NONE_ELSE(J_t, 1.0, (J(i, j) + J(i, j - 1)) / 2.0);
     const auto div_factor = IF_NONE_ELSE(J_t, inv_H, 1.0);
 
-    u.y(i, j) = (Ji_old * u_old.y(i, j) - dt * div_factor *
-                                              (dHT12_dq1 + dHT22_dq2 +  //
-                                               h3 * T21 * Metric::dh2_dq1(grid.xm(i), grid.y(j)) -
-                                               h3 * T11 * Metric::dh1_dq2(grid.xm(i), grid.y(j)) -
-                                               h1 * T33 * Metric::dh3_dq2(grid.xm(i), grid.y(j)))) /
+    u.y(i, j) = (Ji_old * u_old.y(i, j) -
+                 dt * div_factor * calc_H_div_flux_y<Metric>(grid, i, j, FUX, FUY, FVX, FVY, FWZ)) /
                 Ji;
   });
 }

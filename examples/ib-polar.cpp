@@ -34,7 +34,9 @@ constexpr Float CFL       = 0.7;
 constexpr Float tend      = 5e-2;
 constexpr Float dt_write  = tend / 100.0;
 
-constexpr Circle<Float> wall{.x = 0.0, .y = 1.5, .r = 0.125};
+// constexpr Circle<Float> wall{.x = 0.0, .y = 1.5, .r = 0.125};
+constexpr Rect<Float> wall{.x = -2.0, .y = 1.5, .w = 4.0, .h = 10.0};
+constexpr Rect<Float> wall2{.x = -1.0, .y = 0.0, .w = 2.0, .h = 1.0};
 
 // =================================================================================================
 template <typename Float>
@@ -99,12 +101,15 @@ auto main(int argc, char** argv) -> int {
   Float t      = 0.0;
 
   grid.foreach_i(FOREACH_FUNC {
-    ib_wall(i, j) = quadrature([](Float theta,
-                                  Float r) { return r * wall.contains(polar2cartesian(theta, r)); },
-                               grid.theta(i),
-                               grid.theta(i + 1),
-                               grid.r(j),
-                               grid.r(j + 1)) /
+    ib_wall(i, j) = quadrature(
+                        [](Float theta, Float r) {
+                          return r * (wall.contains(polar2cartesian(theta, r)) +
+                                      wall2.contains(polar2cartesian(theta, r)));
+                        },
+                        grid.theta(i),
+                        grid.theta(i + 1),
+                        grid.r(j),
+                        grid.r(j + 1)) /
                     grid.dv(i, j);
   });
 
@@ -157,6 +162,7 @@ auto main(int argc, char** argv) -> int {
   monitor.write();
 
   calc_ib_correction_shape(grid, wall, ib_corr);
+  calc_ib_correction_shape(grid, wall2, ib_corr);
 
   IGOR_TIME_SCOPE("Solver")
   while (t < tend) {
@@ -174,7 +180,7 @@ auto main(int argc, char** argv) -> int {
 
       // 1) Predictor
       calc_mom_flux(grid, u, p, rho, mu, FUX, FUY, FVX, FVY);
-#if 1
+#if 0
       update_u(grid, local_dt, FUX, FUY, FVX, FVY, u_old, u);
       correct_velocity_ib_implicit_euler(grid, ib_corr, rho, mu, local_dt, u);
 #else
