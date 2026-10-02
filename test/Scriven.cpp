@@ -130,21 +130,6 @@ constexpr auto L1_r_dot(Index n) { return interp_n2(ns, L1s_r_dot, n); }
 
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
-constexpr auto ale_adjust_dt(const Grid<Float, LAYOUT>& grid,
-                             const Vec2<Float>& w_,
-                             Float CFL_) noexcept -> Float {
-  // Correction for polar coordinates
-  const auto hx = grid.coords() == Coordinates::CARTESIAN ? grid.dx() : grid.ym(0) * grid.dx();
-  const auto hy = grid.dy();
-
-  // Advection: dt * (|u|/hx + |v|/hy) <= CFL
-  const auto adv          = std::abs(w_.x) / hx + std::abs(w_.y) / hy;
-  constexpr auto no_limit = std::numeric_limits<Float>::max();
-  return adv > 0.0 ? CFL_ / adv : no_limit;
-}
-
-// =================================================================================================
-template <typename Float, Layout LAYOUT>
 void correct_outflow(const Grid<Float, LAYOUT>& grid, FaceVector<Float, LAYOUT> u) {
 #if DIMENSION == 2
   using Metric = Metric::Polar;
@@ -249,7 +234,9 @@ auto main(int argc, char** argv) -> int {
   auto FUY   = grid.alloc_vertex_scalar();
   auto FVX   = grid.alloc_vertex_scalar();
   auto FVY   = grid.alloc_scalar();
-#if DIMENSION == 3
+#if DIMENSION == 2
+  auto FWZ = None{};
+#else
   auto FWZ = grid.alloc_scalar();
 #endif
 
@@ -455,35 +442,8 @@ auto main(int argc, char** argv) -> int {
       update_J(grid, local_dt, w, J_old, J);
 
       // 3) Prediction
-      calc_mom_flux(grid,
-                    u,
-                    p,
-                    rhol,
-                    mul,
-                    w,
-                    FUX,
-                    FUY,
-                    FVX,
-                    FVY
-#if DIMENSION == 3
-                    ,
-                    FWZ
-#endif
-      );
-
-      update_u(grid,
-               local_dt,
-               J_old,
-               J,
-               FUX,
-               FUY,
-               FVX,
-               FVY,
-#if DIMENSION == 3
-               FWZ,
-#endif
-               u_old,
-               u);
+      calc_mom_flux(grid, u, p, rhol, mul, w, FUX, FUY, FVX, FVY, FWZ);
+      update_u(grid, local_dt, J_old, J, FUX, FUY, FVX, FVY, FWZ, u_old, u);
       apply_velocity_bconds(grid, uth_bconds, ur_bconds, u);
       correct_outflow(grid, u);
 

@@ -36,21 +36,6 @@ constexpr Vec2<Float> w{.x = 0.0, .y = 1.0};
 
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
-constexpr auto ale_adjust_dt(const Grid<Float, LAYOUT>& grid,
-                             const Vec2<Float>& w_,
-                             Float CFL_) noexcept -> Float {
-  // Correction for polar coordinates
-  const auto hx = grid.coords() == Coordinates::CARTESIAN ? grid.dx() : grid.ym(0) * grid.dx();
-  const auto hy = grid.dy();
-
-  // Advection: dt * (|u|/hx + |v|/hy) <= CFL
-  const auto adv          = std::abs(w_.x) / hx + std::abs(w_.y) / hy;
-  constexpr auto no_limit = std::numeric_limits<Float>::max();
-  return adv > 0.0 ? CFL_ / adv : no_limit;
-}
-
-// =================================================================================================
-template <typename Float, Layout LAYOUT>
 constexpr void correct_outflow(const Grid<Float, LAYOUT>& grid, FaceVector<Float, LAYOUT> u) {
   // Rescale the outflow so that it matches the inflow exactly (global continuity).
   Float Qin  = 0.0;

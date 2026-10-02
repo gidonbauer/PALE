@@ -65,21 +65,6 @@ constexpr Float r_end = 2.0 * r_min;  // Final radius                       [m]
 
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
-constexpr auto ale_adjust_dt(const Grid<Float, LAYOUT>& grid,
-                             const Vec2<Float>& w_,
-                             Float CFL_) noexcept -> Float {
-  // Correction for polar coordinates
-  const auto hx = grid.coords() == Coordinates::CARTESIAN ? grid.dx() : grid.ym(0) * grid.dx();
-  const auto hy = grid.dy();
-
-  // Advection: dt * (|u|/hx + |v|/hy) <= CFL
-  const auto adv          = std::abs(w_.x) / hx + std::abs(w_.y) / hy;
-  constexpr auto no_limit = std::numeric_limits<Float>::max();
-  return adv > 0.0 ? CFL_ / adv : no_limit;
-}
-
-// =================================================================================================
-template <typename Float, Layout LAYOUT>
 void correct_outflow(const Grid<Float, LAYOUT>& grid, FaceVector<Float, LAYOUT> u) {
 #if DIMENSION == 2
   using Metric = Metric::Polar;
@@ -183,7 +168,9 @@ auto main(int argc, char** argv) -> int {
   auto FUY   = grid.alloc_vertex_scalar();
   auto FVX   = grid.alloc_vertex_scalar();
   auto FVY   = grid.alloc_scalar();
-#if DIMENSION == 3
+#if DIMENSION == 2
+  auto FWZ = None{};
+#else
   auto FWZ = grid.alloc_scalar();
 #endif
 
@@ -209,25 +196,25 @@ auto main(int argc, char** argv) -> int {
       .dimension = DIMENSION,
   };
   Scriven::calc_beta(params);
-  // Igor::Info("Scriven::Params = {{");
-  // Igor::Info("  .Ja        = {}", params.Ja);
-  // Igor::Info("  .eps       = {}", params.eps);
-  // Igor::Info("  .alpha     = {}", params.alpha);
-  // Igor::Info("  .Tsat      = {}", params.Tsat);
-  // Igor::Info("  .Tinf      = {}", params.Tinf);
-  // Igor::Info("  .beta      = {}", params.beta);
-  // Igor::Info("  .dimension = {}", params.dimension);
-  // Igor::Info("}}");
+  Igor::Info("Scriven::Params = {{");
+  Igor::Info("  .Ja        = {}", params.Ja);
+  Igor::Info("  .eps       = {}", params.eps);
+  Igor::Info("  .alpha     = {}", params.alpha);
+  Igor::Info("  .Tsat      = {}", params.Tsat);
+  Igor::Info("  .Tinf      = {}", params.Tinf);
+  Igor::Info("  .beta      = {}", params.beta);
+  Igor::Info("  .dimension = {}", params.dimension);
+  Igor::Info("}}");
 
   Float t              = Scriven::t(r_min, params);
   const Float tend     = Scriven::t(r_end, params);
   const Float dt_write = tend / 100.0;
   Float dt             = dt_write;
 
-  // Igor::Info("t0   = {}", t);
-  // Igor::Info("tend = {}", tend);
-  // Igor::Info("R0   = {}", r_min);
-  // Igor::Info("Rend = {}", r_end);
+  Igor::Info("t0   = {}", t);
+  Igor::Info("tend = {}", tend);
+  Igor::Info("R0   = {}", r_min);
+  Igor::Info("Rend = {}", r_end);
 
   // - Write setup to JSON -------------------------------------------------------------------------
   {
@@ -388,16 +375,8 @@ auto main(int argc, char** argv) -> int {
       update_J(grid, local_dt, w, J_old, J);
 
       // 3) Prediction
-#if DIMENSION == 2
-      calc_mom_flux(grid, u, p, rhol, mul, w, FUX, FUY, FVX, FVY);
-#else
       calc_mom_flux(grid, u, p, rhol, mul, w, FUX, FUY, FVX, FVY, FWZ);
-#endif
-#if DIMENSION == 2
-      update_u(grid, local_dt, J_old, J, FUX, FUY, FVX, FVY, u_old, u);
-#else
       update_u(grid, local_dt, J_old, J, FUX, FUY, FVX, FVY, FWZ, u_old, u);
-#endif
       apply_velocity_bconds(grid, uth_bconds, ur_bconds, u);
       correct_outflow(grid, u);
 
@@ -494,13 +473,13 @@ auto main(int argc, char** argv) -> int {
   Igor::Info("L1(r)     = {:.12e}", L1_r);
   Igor::Info("L1(r_dot) = {:.12e}", L1_r_dot);
   std::cout << '\n';
-  // Igor::Info("abserr(r)     = {:.12e}", r_abserr);
-  // Igor::Info("abserr(r_dot) = {:.12e}", r_dot_abserr);
-  // Igor::Info("abserr(beta)  = {:.12e}", beta_abserr);
-  // Igor::Info("relerr(r)     = {:.12e}", r_relerr);
-  // Igor::Info("relerr(r_dot) = {:.12e}", r_dot_relerr);
-  // Igor::Info("relerr(beta)  = {:.12e}", beta_relerr);
-  // std::cout << '\n';
+  Igor::Info("abserr(r)     = {:.12e}", r_abserr);
+  Igor::Info("abserr(r_dot) = {:.12e}", r_dot_abserr);
+  Igor::Info("abserr(beta)  = {:.12e}", beta_abserr);
+  Igor::Info("relerr(r)     = {:.12e}", r_relerr);
+  Igor::Info("relerr(r_dot) = {:.12e}", r_dot_relerr);
+  Igor::Info("relerr(beta)  = {:.12e}", beta_relerr);
+  std::cout << '\n';
 
-  // Igor::Info("Ok.");
+  Igor::Info("Ok.");
 }

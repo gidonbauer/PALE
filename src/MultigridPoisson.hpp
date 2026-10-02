@@ -368,8 +368,8 @@ class MultigridSolver {
   constexpr void smooth(const Level& level, Index num_iter) {
     // clang-format off
     switch (level.grid.coords()) {
-      case Coordinates::CARTESIAN: return smooth_cartesian(level, num_iter);  // Red-black GS
-      case Coordinates::POLAR:               return smooth_zebra(level, num_iter);  // Zebra-line Thomas
+      case Coordinates::CARTESIAN:           return smooth_cartesian(level, num_iter);  // Red-black GS
+      case Coordinates::POLAR:               
       case Coordinates::SYMMETRIC_SPHERICAL: return smooth_zebra(level, num_iter);  // Zebra-line Thomas
     }
     // clang-format on
@@ -456,13 +456,16 @@ class MultigridSolver {
  public:
   // -----------------------------------------------------------------------------------------------
   constexpr MultigridSolver(const Grid& grid,
-                            BConds<Float> bconds = {.left   = Neumann{},
-                                                    .right  = Neumann{},
-                                                    .bottom = Neumann{},
-                                                    .top    = Neumann{}},
-                            Index min_size       = 2,
-                            Index num_iter_pre   = 0,
-                            Index num_iter_post  = 4)
+                            BConds<Float> bconds =
+                                {
+                                    .left   = Neumann(),
+                                    .right  = Neumann(),
+                                    .bottom = Neumann(),
+                                    .top    = Neumann(),
+                                },
+                            Index min_size      = 2,
+                            Index num_iter_pre  = 0,
+                            Index num_iter_post = 4)
       : m_bconds(std::move(bconds)),
         m_num_iter_pre(num_iter_pre),
         m_num_iter_post(num_iter_post) {

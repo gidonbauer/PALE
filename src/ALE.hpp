@@ -3,6 +3,20 @@
 #include "Grid.hpp"
 
 // =================================================================================================
+template <typename Float, Layout LAYOUT>
+constexpr auto
+ale_adjust_dt(const Grid<Float, LAYOUT>& grid, const Vec2<Float>& w, Float CFL) noexcept -> Float {
+  // Correction for polar coordinates
+  const auto hx = grid.coords() == Coordinates::CARTESIAN ? grid.dx() : grid.ym(0) * grid.dx();
+  const auto hy = grid.dy();
+
+  // Advection: dt * (|u|/hx + |v|/hy) <= CFL
+  const auto adv          = std::abs(w.x) / hx + std::abs(w.y) / hy;
+  constexpr auto no_limit = std::numeric_limits<Float>::max();
+  return adv > 0.0 ? CFL / adv : no_limit;
+}
+
+// =================================================================================================
 template <typename Metric, typename Float, Layout LAYOUT>
 constexpr void calc_H(const Grid<Float, LAYOUT>& grid, Scalar<Float, LAYOUT> H) {
   grid.foreach_i(FOREACH_FUNC { H(i, j) = Metric::H(grid.xm(i), grid.ym(j)); });
