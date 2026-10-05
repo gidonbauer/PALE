@@ -210,7 +210,6 @@ auto main(int argc, char** argv) -> int {
 
       // 1) Predictor
       calc_mom_flux(grid, u, p, rho, mu, FUX, FUY, FVX, FVY);
-      update_u(grid, local_dt, FUX, FUY, FVX, FVY, u_old, u);
 #if SEMI_ANALYTICAL
       update_u_ib_semi_analytical(
           grid, local_dt, None{}, None{}, FUX, FUY, FVX, FVY, None{}, mu, rho, ib_corr, u_old, u);
