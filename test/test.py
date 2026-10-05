@@ -62,6 +62,9 @@ ALL_TESTS = [
     TestCase("GCL",                         ["Cartesian", "Polar", "Symmetric-Spherical"],  False),
     TestCase("Scriven-2D",                  [16, 32, 64],                                   False),
     TestCase("Scriven-3D",                  [16, 32, 64],                                   False),
+    TestCase("IB-Channel-MG",               [16, 32, 64],                                   False),
+    TestCase("IB-Channel-FFT",              [16, 32, 64],                                   False),
+    TestCase("IB-Polar-Channel",            [8, 16, 32, 64],                                False),
     TestCase("Iterator",                    None,                                           True),
     TestCase("Boundary",                    None,                                           False),
 ]
