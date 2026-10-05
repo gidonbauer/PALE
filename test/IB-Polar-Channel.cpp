@@ -86,7 +86,13 @@ auto main(int argc, char** argv) -> int {
     return 1;
   }
 
-  const auto output_dir = "./test/output/IB-Polar-Channel-" + std::to_string(N);
+  const auto output_dir = "./test/output/IB-Polar-Channel-"
+#if SEMI_ANALYTICAL
+                          "SA-"
+#else
+                          "IE-"
+#endif
+                          + std::to_string(N) + '/';
   if (!init_output_directory(output_dir)) { return 1; }
 
   Grid<Float> grid(theta_min, theta_max, 2 * N, r_min, r_max, N, 1, Coordinates::POLAR);
@@ -205,8 +211,13 @@ auto main(int argc, char** argv) -> int {
       // 1) Predictor
       calc_mom_flux(grid, u, p, rho, mu, FUX, FUY, FVX, FVY);
       update_u(grid, local_dt, FUX, FUY, FVX, FVY, u_old, u);
+#if SEMI_ANALYTICAL
       update_u_ib_semi_analytical(
           grid, local_dt, None{}, None{}, FUX, FUY, FVX, FVY, None{}, mu, rho, ib_corr, u_old, u);
+#else
+      update_u(grid, local_dt, FUX, FUY, FVX, FVY, u_old, u);
+      correct_velocity_ib_implicit_euler(grid, ib_corr, rho, mu, local_dt, u);
+#endif
       apply_velocity_bconds(grid, u_bconds, v_bconds, u);
       correct_outflow(grid, u);
 

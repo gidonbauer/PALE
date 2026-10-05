@@ -9,8 +9,7 @@ DEFAULT_BUILD_TESTS = test/Advection-Cartesian.cpp \
                       test/ALE-Polar-Conservation \
                       test/ALE-Spherical-Conservation \
                       test/GCL \
-                      test/Scalar-Source \
-                      test/IB-Polar-Channel
+                      test/Scalar-Source
 DEFAULT_BUILD_TESTS := ${addprefix bin/, ${basename ${DEFAULT_BUILD_TESTS}}}
 
 ${DEFAULT_BUILD_TESTS}: bin/test/%: test/%.cpp ${HEADERS} | bin/test test/output
@@ -40,11 +39,23 @@ bin/test/Scriven-3D: test/Scriven.cpp ${HEADERS} | bin/test test/output
 bin/test/ALE-Scalar-Source: test/Scalar-Source.cpp  ${HEADERS} | bin/test test/output
 	${CXX} ${CXX_FLAGS} ${CXX_INC} -DUSE_ALE -o $@ $< ${CXX_LIB}
 
-bin/test/IB-Channel-FFT: test/IB-Channel.cpp ${HEADERS} | bin/test test/output
+bin/test/IB-Channel-FFT-IE: test/IB-Channel.cpp ${HEADERS} | bin/test test/output
 	${CXX} ${CXX_FLAGS} ${CXX_INC} ${POISFFT_INC} -DFFT_POISSON=1 -o $@ $< ${CXX_LIB} ${POISFFT_LIB}
 
-bin/test/IB-Channel-MG: test/IB-Channel.cpp ${HEADERS} | bin/test test/output
+bin/test/IB-Channel-MG-IE: test/IB-Channel.cpp ${HEADERS} | bin/test test/output
 	${CXX} ${CXX_FLAGS} ${CXX_INC} -DMG_POISSON=1 -o $@ $< ${CXX_LIB}
+
+bin/test/IB-Channel-FFT-SA: test/IB-Channel.cpp ${HEADERS} | bin/test test/output
+	${CXX} ${CXX_FLAGS} ${CXX_INC} ${POISFFT_INC} -DFFT_POISSON=1 -DSEMI_ANALYTICAL=1 -o $@ $< ${CXX_LIB} ${POISFFT_LIB}
+
+bin/test/IB-Channel-MG-SA: test/IB-Channel.cpp ${HEADERS} | bin/test test/output
+	${CXX} ${CXX_FLAGS} ${CXX_INC} -DMG_POISSON=1 -DSEMI_ANALYTICAL=1 -o $@ $< ${CXX_LIB}
+
+bin/test/IB-Polar-Channel-IE: test/IB-Polar-Channel.cpp ${HEADERS} | bin/test test/output
+	${CXX} ${CXX_FLAGS} ${CXX_INC} -o $@ $< ${CXX_LIB}
+
+bin/test/IB-Polar-Channel-SA: test/IB-Polar-Channel.cpp ${HEADERS} | bin/test test/output
+	${CXX} ${CXX_FLAGS} ${CXX_INC} -DSEMI_ANALYTICAL=1 -o $@ $< ${CXX_LIB}
 
 test/output bin/test: %:
 	mkdir -p $@
