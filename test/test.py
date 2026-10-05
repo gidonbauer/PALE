@@ -193,55 +193,68 @@ METRICS_INDENT = 6   # spaces before the metrics line, after the leading space
 
 def render_results(results: Results, show_only_failed: bool, file: TextIO = sys.stdout) -> None:
     color = file.isatty()
+    WALL_WIDTH = 10
+    MEM_WIDTH  = 10
 
-    rows: List[Tuple[str, bool, str]] = []
-    num_passed = 0
+    groups: Dict[str, List[Tuple[Input, TestResult]]] = {}
     for (name, inp), res in results.items():
-        ok = res.ret == 0
-        num_passed += ok
+        groups.setdefault(name, []).append((inp, res))
+
+    num_passed = sum(res.ret == 0 for res in results.values())
+    total_wall = sum(res.runtime for res in results.values())
+
+    # (name, inputs, ok, wall, mem, failed details)
+    rows: List[Tuple[str, str, bool, str, str, List[str]]] = []
+    for name, runs in groups.items():
+        ok = all(res.ret == 0 for _, res in runs)
         if show_only_failed and ok: continue
-        metrics = (
+        inputs = " ".join("-" if inp is None else str(inp) for inp, _ in runs)
+        wall   = f"{sum(res.runtime for _, res in runs):.2f}s"
+        mem    = format_bytes(max(res.max_rss for _, res in runs))
+        inp_width = max(len("-" if inp is None else str(inp)) for inp, _ in runs)
+        details = [
+            f"    x {'-' if inp is None else str(inp):<{inp_width}}     "
             f"wall={res.runtime:.2f}s, "
             f"cpu={res.cpu_time:.2f}s, "
             f"mem={format_bytes(res.max_rss)}"
+            for inp, res in runs if res.ret != 0
+        ]
+        rows.append((name, inputs, ok, wall, mem, details))
+
+    summary = f"Passed {num_passed}/{len(results)} cases in {len(groups)} tests"
+    if color:
+        color_begin = GREEN if num_passed == len(results) else RED
+        summary_colored = summary.replace(
+            f"{num_passed}/{len(results)}", f"{color_begin}{num_passed}/{len(results)}{RESET}", 1
         )
-        rows.append((run_name(name, inp), ok, metrics))
+    else:
+        summary_colored = summary
 
-    def print_num_passed():
-        if color:
-            color_begin = f"{GREEN if num_passed == len(results) else RED}"
-            color_end   = f"{RESET}"
-        else:
-            color_begin = ""
-            color_end   = ""
-        print(f"\n Passed {color_begin}{num_passed}/{len(results)}{color_end}")
+    name_width = max([len("Test")] + [len(r[0]) for r in rows]) + 2
+    inp_width  = max([len("Inputs")] + [len(r[1]) for r in rows]) + 2
+    inp_width  = max(inp_width, len(summary) + 2 - name_width - STATUS_WIDTH)
+    left_width = name_width + inp_width + STATUS_WIDTH
+    inner      = left_width + WALL_WIDTH + MEM_WIDTH
 
-    if not rows:
-        print_num_passed()
-        return
+    print(f" {'=' * inner}", file=file)
+    if rows:
+        print(f" {'Test':<{name_width}}{'Inputs':<{inp_width}}{'':{STATUS_WIDTH}}"
+              f"{'Wall':>{WALL_WIDTH}}{'Mem':>{MEM_WIDTH}}", file=file)
+        print(f" {'-' * inner}", file=file)
 
-    longest_name = max(len(n) for n, _, _ in rows)
-    longest_metrics = max(len(m) for _, _, m in rows)
+        for name, inputs, ok, wall, mem, details in rows:
+            status = "PASS" if ok else "FAIL"
+            if color:
+                status = f"{GREEN if ok else RED}{status}{RESET}"
+            print(f" {name:<{name_width}}{inputs:<{inp_width}}{status}"
+                  f"{wall:>{WALL_WIDTH}}{mem:>{MEM_WIDTH}}", file=file)
+            for detail in details:
+                print(f" {detail}", file=file)
 
-    inner = max(
-        longest_name + 1 + MIN_DOTS + 1 + STATUS_WIDTH,
-        METRICS_INDENT + longest_metrics + STATUS_WIDTH,
-    )
-
-    border = "=" * inner
-    print(f" {border}", file=file)
-
-    for name, ok, metrics in rows:
-        dots = "." * (inner - len(name) - 2 - STATUS_WIDTH)
-        status = "PASS" if ok else "FAIL"
-        if color:
-            status = f"{GREEN if ok else RED}{status}{RESET}"
-        print(f" {name} {dots} {status}", file=file)
-        print(f" {'':{METRICS_INDENT}}{metrics}", file=file)
-
-    print_num_passed()
-
-    print(f" {border}", file=file)
+        print(f" {'-' * inner}", file=file)
+    padding = " " * (left_width - len(summary))
+    print(f" {summary_colored}{padding}{f'{total_wall:.2f}s':>{WALL_WIDTH}}{'':{MEM_WIDTH}}", file=file)
+    print(f" {'=' * inner}", file=file)
 
 
 LOG_PATH = "test/logs/"

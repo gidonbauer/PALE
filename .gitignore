@@ -11,6 +11,7 @@ bin/
 output/
 build/
 logs/
+__pycache__/
 
 scaling.ipynb
 stencil.ipynb
