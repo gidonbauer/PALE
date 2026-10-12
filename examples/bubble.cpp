@@ -8,13 +8,14 @@
 #include "Advection-Diffusion.hpp"
 #include "BoundaryConditions.hpp"
 #include "Common.hpp"
+#include "Geometry.hpp"
 #include "Grid.hpp"
 #include "HDFWriter.hpp"
+#include "IB.hpp"
 #include "IO.hpp"
 #include "Mac.hpp"
 #include "Monitor.hpp"
 #include "MultigridPoisson.hpp"
-#include "Quadrature.hpp"
 
 #ifndef DIMENSION
 #define DIMENSION 2
@@ -31,7 +32,7 @@ constexpr Float pi        = std::numbers::pi_v<Float>;
 constexpr Float r_min     = 0.25e-3;  // Initial radius                     [m]
 constexpr Float r_max     = 10.0 * r_min;
 constexpr Float theta_min = 0.0;
-constexpr Float theta_max = pi;
+constexpr Float theta_max = 7.0 * pi / 8.0;
 
 // Liquid properties
 constexpr Float rhol   = 422.36;                 // Density                   [kg/m^3]
@@ -49,7 +50,7 @@ constexpr Float rhog = 1.8164;  // Density                   [kg/m^3]
 
 // Temperatures
 constexpr Float Tsat = 111.0;        // Saturation temperature    [K]
-constexpr Float Tinf = Tsat - 0.26;  // Bulk temperature          [K]
+constexpr Float Tinf = Tsat + 0.26;  // Bulk temperature          [K]
 constexpr Float hev  = 5.1083e5;     // Enthalpy of vaporization  [J/kg]
 
 // Dimensionless numbers relevant for Scriven case
@@ -58,6 +59,12 @@ constexpr Float eps      = (rhol - rhog) / rhol;  // Relative difference of dens
 constexpr Float CFL      = 0.5;
 constexpr Float tend     = 0.5;
 constexpr Float dt_write = tend / 100.0;
+
+// =================================================================================================
+template <typename Float>
+constexpr auto Peclet(Float u, Float r) {
+  return u * r / alphal;
+}
 
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
@@ -182,6 +189,21 @@ auto main(int argc, char** argv) -> int {
   auto J     = grid.alloc_scalar();
   calc_H(grid, J);
 
+  auto ib_wall = grid.alloc_scalar();
+  auto ib_corr = grid.alloc_face_vector();
+
+  Rect<Float> wall{
+      .x = -r_max,
+      .y = -r_max,
+      .w = r_max + std::cos(theta_max) * r_min,
+      .h = 2.0 * r_max,
+  };
+  calc_ib_volume_fraction(
+      grid,
+      [wall](const Vec2<Float>& xy) { return static_cast<Float>(wall.contains(xy)); },
+      ib_wall);
+  calc_ib_correction_shape(grid, wall, ib_corr);
+
   Float t  = 0.0;
   Float dt = dt_write;
 
@@ -227,11 +249,12 @@ auto main(int argc, char** argv) -> int {
   writer.add_field("p", p);
   writer.add_field("T", T);
   writer.add_field("div", div);
+  writer.add_field("wall", ib_wall);
   if (!writer.write(t)) { return 1; }
 
   Stats p_stats     = stats(grid, p);
-  Stats u_stats     = stats(grid, u.x);
-  Stats v_stats     = stats(grid, u.y);
+  Stats uth_stats   = stats(grid, u.x);
+  Stats ur_stats    = stats(grid, u.y);
   Stats T_stats     = stats(grid, T);
   Stats div_stats   = stats(grid, div);
   Float div_max     = std::max(std::abs(div_stats.min), std::abs(div_stats.max));
@@ -243,16 +266,19 @@ auto main(int argc, char** argv) -> int {
   Float mg_res      = 0.0;
   Index mg_cycles   = 0;
 
+  Float Pe          = Peclet(uth_stats.max, grid.r_min());
+
   Monitor<Float> monitor(output_dir + "/monitor.log");
   monitor.add_variable(&t, "t");
   monitor.add_variable(&dt, "dt");
   monitor.add_variable(&p_stats.max, "max(p)");
-  monitor.add_variable(&u_stats.max, "max(u_theta)");
-  monitor.add_variable(&v_stats.max, "max(u_r)");
+  monitor.add_variable(&uth_stats.max, "max(u_theta)");
+  monitor.add_variable(&ur_stats.max, "max(u_r)");
   monitor.add_variable(&T_stats.min, "min(T)");
   monitor.add_variable(&T_stats.max, "max(T)");
-  monitor.add_variable(&m_dot_total, "m_dot_total");
-  monitor.add_variable(&r_dot, "r_dot");
+  monitor.add_variable(&Pe, "Pe");
+  // monitor.add_variable(&m_dot_total, "m_dot_total");
+  // monitor.add_variable(&r_dot, "r_dot");
   monitor.add_variable(&r, "r");
   monitor.add_variable(&div_max, "absmax(div)");
   monitor.add_variable(&mg_res, "res(MG)");
@@ -289,8 +315,13 @@ auto main(int argc, char** argv) -> int {
 
       // 3) Prediction
       calc_mom_flux(grid, u, p, rhol, mul, w, FUX, FUY, FVX, FVY, FWZ);
+#if 1
       update_u(grid, local_dt, J_old, J, FUX, FUY, FVX, FVY, FWZ, u_old, u);
-
+      correct_velocity_ib_implicit_euler(grid, ib_corr, rhol, mul, local_dt, u);
+#else
+      update_u_ib_semi_analytical(
+          grid, local_dt, J_old, J_old, FUX, FUY, FVX, FVY, FWZ, mul, rhol, ib_corr, u_old, u);
+#endif
       apply_velocity_bconds(grid, uth_bconds, ur_bconds, u);
       correct_outflow(grid, u);
 
@@ -326,13 +357,26 @@ auto main(int argc, char** argv) -> int {
       // 7) Update the physical position of the grid
       grid.move_grid_by_velocity(w, 0.5 * dt);
       // solver.move_grid_by_velocity(w, 0.5 * dt); // Already moved in step 4.1)
+
+      // 8) Update IB correction terms
+      wall = {
+          .x = -grid.r_max(),
+          .y = -grid.r_max(),
+          .w = grid.r_max() + std::cos(theta_max) * grid.r_min(),
+          .h = 2.0 * grid.r_max(),
+      };
+      calc_ib_correction_shape(grid, wall, ib_corr);
     }
     calc_div(grid, u, div);
     interpolate(grid, u, ui);
+    calc_ib_volume_fraction(
+        grid,
+        [wall](const Vec2<Float>& xy) { return static_cast<Float>(wall.contains(xy)); },
+        ib_wall);
 
     p_stats      = stats(grid, p);
-    u_stats      = stats(grid, u.x);
-    v_stats      = stats(grid, u.y);
+    uth_stats    = stats(grid, u.x);
+    ur_stats     = stats(grid, u.y);
     div_stats    = stats(grid, div);
     T_stats      = stats(grid, T);
     div_max      = std::max(std::abs(div_stats.min), std::abs(div_stats.max));
@@ -341,6 +385,7 @@ auto main(int argc, char** argv) -> int {
     r            = grid.y_min();
     m_dot_total  = calc_m_dot_total(grid, T);
     r_dot        = calc_r_dot(grid.y_min(), m_dot_total);
+    Pe           = Peclet(ur_stats.max, r);
 
     monitor.write();
     if (should_save(t, dt, dt_write, tend)) {

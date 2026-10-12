@@ -46,7 +46,12 @@ namespace Expected {
 
 constexpr std::array ns  = {16, 32, 64, 128, 256};
 constexpr std::array L1s = {
-    2.11220054e-03, 5.32794280e-04, 1.33995883e-04, 3.35113462e-05, 8.37842234e-06};
+    2.11220054e-03,
+    5.32794280e-04,
+    1.33995883e-04,
+    3.35113462e-05,
+    8.37842234e-06,
+};
 static_assert(ns.size() == L1s.size());
 constexpr auto L1(Index n) { return interp_n2(ns, L1s, n); }
 

@@ -122,9 +122,6 @@ struct Polar {
   }
 };
 
-// TODO: Metric for rotationally symmetric spherical coordinates.
-//       This likely requires to re-formulate the metrics we already have in terms of cell-volume
-//       metric cm and face-metrics fm1 and fm2.
 struct SymmetricSpherical {
   static constexpr bool is_2d = false;
 

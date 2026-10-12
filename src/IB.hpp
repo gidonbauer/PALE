@@ -72,6 +72,30 @@ characterize_flow_regime(const Grid<Float, LAYOUT>& grid, FUNC immersed_wall, Fl
 }
 
 // -------------------------------------------------------------------------------------------------
+template <size_t N = 16, typename FUNC, typename Float, Layout LAYOUT>
+constexpr void calc_ib_volume_fraction(const Grid<Float, LAYOUT>& grid,
+                                       FUNC immersed_wall,
+                                       Scalar<Float, LAYOUT> ib_vf) {
+  grid.foreach_i(FOREACH_FUNC {
+    ib_vf(i, j) =
+        quadrature<N>(
+            [=](Float x, Float y) {
+              switch (grid.coords()) {
+                case Coordinates::CARTESIAN: return immersed_wall({.x = x, .y = y});
+                case Coordinates::POLAR:     return y * immersed_wall(polar2cartesian(x, y));
+                case Coordinates::SYMMETRIC_SPHERICAL:
+                  return Igor::sqr(y) * std::sin(x) * immersed_wall(polar2cartesian(x, y));
+              }
+            },
+            grid.x(i),
+            grid.x(i + 1),
+            grid.y(j),
+            grid.y(j + 1)) /
+        grid.dv(i, j);
+  });
+}
+
+// -------------------------------------------------------------------------------------------------
 // Fraction delta in (0, 1] of the step p -> n at which the wall is crossed
 template <typename FUNC, typename Float>
 [[nodiscard]] constexpr auto
