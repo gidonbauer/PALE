@@ -732,3 +732,16 @@ concept IsNoneOr = IsNone<T> || std::is_same_v<std::remove_cvref_t<T>, std::remo
       return value_if_not_none;                                                                    \
     }                                                                                              \
   }()
+
+// =================================================================================================
+template <typename T, typename Float, Layout LAYOUT>
+concept IsScalar = std::is_same_v<std::remove_cvref_t<T>, Scalar<Float, LAYOUT>>;
+
+template <typename T, typename Float, Layout LAYOUT>
+concept IsVector = std::is_same_v<std::remove_cvref_t<T>, Vector<Float, LAYOUT>>;
+
+template <typename T, typename Float, Layout LAYOUT>
+concept IsFaceVector = std::is_same_v<std::remove_cvref_t<T>, FaceVector<Float, LAYOUT>>;
+
+template <typename T, typename Float, Layout LAYOUT>
+concept IsVertexScalar = std::is_same_v<std::remove_cvref_t<T>, VertexScalar<Float, LAYOUT>>;

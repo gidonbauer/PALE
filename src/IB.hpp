@@ -8,7 +8,6 @@
 
 #include "Grid.hpp"
 #include "MacOrthogonal.hpp"
-#include "Metrics.hpp"
 #include "Quadrature.hpp"
 
 // See: Luchini, P., Gatti, D., Chiarini, A., Gattere, F., Atzori, M., Quadrio, M., 2025. A simple
@@ -127,7 +126,7 @@ wall_fraction(FUNC immersed_wall, const Vec2<Float>& p, const Vec2<Float>& n) ->
 template <typename Metric, typename Float>
 [[nodiscard]] constexpr auto laplace_weight_q1(const Vec2<Float>& p, Float sign, Float dq1)
     -> Float {
-  const Float q1_face = p.x + sign * dq1 / 2.0;
+  const Float q1_face = p.x + sign * dq1 / 2.0;  // x ± ∆x/2
   return Metric::H(q1_face, p.y) / Igor::sqr(Metric::h1(q1_face, p.y)) /
          (Metric::H(p.x, p.y) * Igor::sqr(dq1));
 }
@@ -136,7 +135,7 @@ template <typename Metric, typename Float>
 template <typename Metric, typename Float>
 [[nodiscard]] constexpr auto laplace_weight_q2(const Vec2<Float>& p, Float sign, Float dq2)
     -> Float {
-  const Float q2_face = p.y + sign * dq2 / 2.0;
+  const Float q2_face = p.y + sign * dq2 / 2.0;  // y ± ∆y/2
   return Metric::H(p.x, q2_face) / Igor::sqr(Metric::h2(p.x, q2_face)) /
          (Metric::H(p.x, p.y) * Igor::sqr(dq2));
 }
@@ -157,10 +156,10 @@ template <typename Metric, typename Float>
 }
 
 // -------------------------------------------------------------------------------------------------
-template <typename Shape, typename Float, Layout LAYOUT>
-constexpr void calc_ib_correction_shape(const Grid<Float, LAYOUT>& grid,
-                                        const Shape& wall,
-                                        FaceVector<Float, LAYOUT> ib_corr) {
+template <typename Shape, typename Float, Layout LAYOUT, typename IB_CORR_t>
+requires(IsScalar<IB_CORR_t, Float, LAYOUT> || IsFaceVector<IB_CORR_t, Float, LAYOUT>)
+constexpr void
+calc_ib_correction_shape(const Grid<Float, LAYOUT>& grid, const Shape& wall, IB_CORR_t ib_corr) {
   auto immersed_wall = [&](Float x, Float y) {
     switch (grid.coords()) {
       case Coordinates::CARTESIAN:           return wall.contains(Vec2<Float>{.x = x, .y = y});
@@ -209,21 +208,31 @@ constexpr void calc_ib_correction_shape(const Grid<Float, LAYOUT>& grid,
                    laplace_weight_q2<Metric>(p, Float{-1}, dy));
         };
 
-        grid.template foreach_face_i<Dimension::X>(FOREACH_FUNC {
-          const Vec2<Float> p = {
-              .x = grid.x(i),
-              .y = grid.ym(j),
-          };
-          calc_corr(p, ib_corr.x(i, j));
-        });
+        if constexpr (IsScalar<IB_CORR_t, Float, LAYOUT>) {
+          grid.foreach_i(FOREACH_FUNC {
+            const Vec2<Float> p = {
+                .x = grid.xm(i),
+                .y = grid.ym(j),
+            };
+            calc_corr(p, ib_corr(i, j));
+          });
+        } else {
+          grid.template foreach_face_i<Dimension::X>(FOREACH_FUNC {
+            const Vec2<Float> p = {
+                .x = grid.x(i),
+                .y = grid.ym(j),
+            };
+            calc_corr(p, ib_corr.x(i, j));
+          });
 
-        grid.template foreach_face_i<Dimension::Y>(FOREACH_FUNC {
-          const Vec2<Float> p = {
-              .x = grid.xm(i),
-              .y = grid.y(j),
-          };
-          calc_corr(p, ib_corr.y(i, j));
-        });
+          grid.template foreach_face_i<Dimension::Y>(FOREACH_FUNC {
+            const Vec2<Float> p = {
+                .x = grid.xm(i),
+                .y = grid.y(j),
+            };
+            calc_corr(p, ib_corr.y(i, j));
+          });
+        }
       });
 }
 
