@@ -1,0 +1,404 @@
+% !TeX program = latexmk --lualatex --interaction=nonstopmode --halt-on-error --output-directory=build --synctex=1
+
+\documentclass{article}
+\usepackage[a4paper, margin=30mm]{geometry}
+
+\usepackage[
+    colorlinks,
+    citecolor=black,
+    linkcolor=black,
+]{hyperref}
+\usepackage[
+  style=numeric,
+  doi=true, isbn=false, url=false, eprint=false,
+  date=year,% print only the year, not the month
+]{biblatex}
+\addbibresource{references.bib}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\numberwithin{equation}{section}
+
+\usepackage{cancel}
+\usepackage[
+    per-mode=fraction
+]{siunitx}
+    
+\usepackage{tikz}
+
+\newcommand{\dd}{\mathrm{d}}
+\newcommand{\pd}[2]{\dfrac{\partial #1}{\partial #2}}
+\newcommand{\pdd}[2]{\dfrac{\partial^2 #1}{\partial #2^2}}
+\newcommand{\dimless}[1]{\hat{#1}}
+
+\setlength{\parindent}{0pt}
+
+\title{Immersed Boundary Conditions}
+\author{Gidon Bauer}
+
+\begin{document}
+
+\input{rwthcolors.tex}
+
+\maketitle
+
+\section{Immersed Boundary Conditions for Velocity}
+
+Luchini et al. implemented a second order accurate immersed boundary method by correcting the viscous operator in the Navier--Stokes equation to account for the immersed wall \cite{luchiniSimpleEfficientSecondorder2025}.
+The Navier--Stokes equations
+\begin{equation}
+    \begin{gathered}
+        \pd{\vec{u}}{t}
+        + \left(\vec{u} \cdot \nabla\right) \vec{u}
+        + \frac1\rho \nabla p
+        - \nu \nabla^2 \vec{u}
+        = \vec{f} \\
+        \nabla \cdot \vec{u} = 0
+    \end{gathered}
+    \label{eq:navier-stokes}
+\end{equation}
+are discretized using second order central finite differences on a MAC-staggered mesh \cite{luchiniSimpleEfficientSecondorder2025,harlowMAC1965}.
+Near the wall, it is assumed that the Laplacian from the viscous term becomes dominant \cite{luchiniSimpleEfficientSecondorder2025}.
+On a uniform grid, the discretized Laplacian is
+\begin{equation}
+    \begin{split}
+        \nabla^2 u \approx
+        \ &d^{(2)}_{x;i,j}(-1) u_{i-1,j}
+        + d^{(2)}_{x;i,j}( 0) u_{i,  j}
+        + d^{(2)}_{x;i,j}( 1) u_{i+1,j}
+        + \\ &d^{(2)}_{y;i,j}(-1) u_{i,j-1}
+        + d^{(2)}_{y;i,j}( 0) u_{i,j  }
+        + d^{(2)}_{y;i,j}( 1) u_{i,j+1}
+    \end{split}
+    \label{eq:discrete_laplacian}
+\end{equation}
+
+We assume that the immersed wall is to the left of the point $(i,j)$ as shown in Fig. \ref{fig:ib-to-left}.
+The value at point $(i-1,j)$ is extrapolated linearly such that the value at the interface is exactly $u^*$.
+\begin{equation}
+    u_{i-1,j} = u^* + \frac{u_{i,j} - u^*}{\delta x} (\delta x - \Delta x)
+    = u_{i,j} - \frac{(u_{i,j} - u^*) \Delta x}{\delta x}
+    = u_{i,j} \left(1 - \frac{\Delta x}{\delta x}\right) + u^* \frac{\Delta x}{\delta x}
+\end{equation}
+Assuming a stationary wall, we simply get
+\begin{equation}
+    u_{i-1,j} = u_{i,j} \left(1 - \frac{\Delta x}{\delta x}\right).
+\end{equation}
+
+We then insert this into Eq. \eqref{eq:discrete_laplacian} and get
+\begin{equation}
+    \begin{split}
+        \nabla^2 u \approx
+        \ &d^{(2)}_{x;i,j}(-1) u_{i,j} \left(1 - \frac{\Delta x}{\delta x}\right)
+        + d^{(2)}_{x;i,j}( 0) u_{i,  j}
+        + d^{(2)}_{x;i,j}( 1) u_{i+1,j}
+        + \\ &d^{(2)}_{y;i,j}(-1) u_{i,j-1}
+        + d^{(2)}_{y;i,j}( 0) u_{i,j  }
+        + d^{(2)}_{y;i,j}( 1) u_{i,j+1}
+    \end{split}
+\end{equation}
+This change can be absorbed into the factor $d^{(2)}_{x;i,j}(0)$ in the following way
+\begin{equation}
+    \tilde{d}^{(2)}_{x;i,j}(0) =
+    d^{(2)}_{x;i,j}(0) -
+    \underbrace{d^{(2)}_{x;i,j}(-1) \left(\frac{\Delta x}{\delta x} - 1\right)}_{=: \lambda}.
+\end{equation}
+We can define the relative distance $\xi = \frac{\delta x}{\Delta x} \in (0, 1]$ and get
+\begin{equation}
+    \lambda = d^{(2)}_{x;i,j}(-1) \frac{1 - \xi}{\xi}.
+    \label{eq:calc-lambda}
+\end{equation}
+
+\begin{figure}
+    \centering
+    \begin{tikzpicture}[>=stealth, scale=2, line width=2]
+        \draw (0, 0) -- (3, 0);
+        \draw (0, 1) -- (3, 1);
+        \draw (0, 2) -- (3, 2);
+        \draw (0, 3) -- (3, 3);
+        \draw (0, 0) -- (0, 3);
+        \draw (1, 0) -- (1, 3);
+        \draw (2, 0) -- (2, 3);
+        \draw (3, 0) -- (3, 3);
+        \node[below left] at (0, 1.5) {$(i-1,j)$};
+        \node[below right] at (1, 1.5) {$(i,j)$};
+        
+        \draw (0.2, -0.1) -- (0.6, 3.1);
+
+        \draw[->, rwth-red-100] (-0.2, 1.5) -- (0.2, 1.5);
+        \draw[->, rwth-red-100] ( 0.8, 1.5) -- (1.2, 1.5);
+        \draw[->, rwth-red-100] ( 1.8, 1.5) -- (2.2, 1.5);
+        \draw[->, rwth-red-100] ( 0.8, 0.5) -- (1.2, 0.5);
+        \draw[->, rwth-red-100] ( 0.8, 2.5) -- (1.2, 2.5);
+
+        \draw[|-|, line width=1.5, rwth-purple-100] (0, 1.5) -- (0.4, 1.5);
+        \node[below, rwth-purple-100] at (0.2, 1.5) {$\overline{\delta x}$};
+        \draw[|-|, line width=1.5, rwth-purple-100] (0.4, 1.5) -- (1, 1.5);
+        \node[below, rwth-purple-100] at (0.7, 1.5) {$\delta x$};
+    \end{tikzpicture}
+    \caption{Immersed boundary to the left of point $(i,j)$. Here $\overline{\delta x} = \Delta x - \delta x$.}
+    \label{fig:ib-to-left}
+\end{figure}
+
+\subsection{General Orthogonal Coordinate System}
+
+In a general three-dimensional orthogonal coordinate system $(q_1, q_2, q_3)$ with corresponding scale factors $h_1, h_2, h_3$,
+the scalar Laplacian is
+\begin{equation}
+    \nabla^2 u = \frac{1}{H} \left[
+        \pd{}{q_1} \left(\frac{H}{h_1^2} \pd{u}{q_1}\right)
+        + \pd{}{q_2} \left(\frac{H}{h_2^2} \pd{u}{q_2}\right)
+        + \pd{}{q_3} \left(\frac{H}{h_3^2} \pd{u}{q_3}\right)
+    \right].
+\end{equation}
+Here $H = h_1 h_2 h_3$ is the volume metric.
+
+Considering only the $q_1$ direction, we discretize on a uniform mesh
+\begin{equation}
+    \begin{split}
+        \frac{1}{H} \pd{}{q_1} \left(\frac{H}{h_1^2} \pd{u}{q_1}\right)\bigg\vert_{i} &\approx
+        \frac{1}{H_{i}} \frac{1}{\Delta q_1} \left(
+            \frac{H_{i+\tfrac12}}{h_{1, i+\tfrac12}^2} \frac{u_{i+1} - u_{i}}{\Delta q_1}
+            - \frac{H_{i-\tfrac12}}{h_{1, i-\tfrac12}^2} \frac{u_{i} - u_{i-1}}{\Delta q_1}
+        \right) + K \\
+        &= \frac{1}{H_i \Delta q_1^2} \left[
+            \frac{H_{i-\tfrac12}}{h_{1,i-\tfrac12}^2} u_{i-1} -
+            \left(
+                \frac{H_{i+\tfrac12}}{h_{1,i+\tfrac12}^2} +
+                \frac{H_{i-\tfrac12}}{h_{1,i-\tfrac12}^2}
+            \right) u_{i} +
+            \frac{H_{i+\tfrac12}}{h_{1,i+\tfrac12}^2} u_{i+1}
+        \right] + K
+    \end{split}
+\end{equation}
+Here $K$ describes the coupling terms that arise for the vector Laplacian in orthogonal coordinates.
+These terms are not relevant for the subsequent derivations.
+
+This gives us the values for $d^{(2)}_{q_k;i,j}$:
+\begin{equation}
+    \begin{split}
+        d^{(2)}_{q_k;i,j}(-1) &= \frac{1}{H_i \Delta q_k^2} \frac{H_{i-\tfrac12}}{h_{k,i-\tfrac12}^2} \\
+        d^{(2)}_{q_k;i,j}(0)  &= -\frac{1}{H_i \Delta q_k^2} \left(
+                \frac{H_{i+\tfrac12}}{h_{k,i+\tfrac12}^2} +
+                \frac{H_{i-\tfrac12}}{h_{k,i-\tfrac12}^2}
+            \right) \\
+        d^{(2)}_{q_k;i,j}(1)  &= \frac{1}{H_i \Delta q_k^2} \frac{H_{i+\tfrac12}}{h_{k,i+\tfrac12}^2}
+    \end{split}
+\end{equation}
+Note that for $k=2$, the index must be changed to $j$.
+
+\subsubsection{Cartesian Coordinates}
+
+For Cartesian coordinates $(q_1,q_2,q_3) = (x,y,z)$, we have $h_1 = h_2 = h_3 = 1$.
+Then we have for the parameters of the discretized Laplacian
+\begin{equation}
+    \begin{split}
+        d^{(2)}_{q_k;i,j}(-1) &=  \frac{1}{\Delta q_k^2} \\
+        d^{(2)}_{q_k;i,j}(0)  &= -\frac{2}{\Delta q_k^2} \\
+        d^{(2)}_{q_k;i,j}(1)  &=  \frac{1}{\Delta q_k^2}.
+    \end{split}
+\end{equation}
+
+\subsubsection{Polar Coordinates}
+
+For polar coordinates in two dimensions $(q_1,q_2) = (\theta,r)$, we have $h_1 = r$ and $h_2 = 1$.
+Then we have for the parameters of the discretized Laplacian
+\begin{equation}
+    \begin{split}
+        d^{(2)}_{\theta;i,j}(-1) &= \frac{1}{r_i \Delta \theta^2} \frac{1}{r_{i-\tfrac12}} \\
+        d^{(2)}_{\theta;i,j}(0)  &= -\frac{1}{r_i \Delta \theta^2} \left(
+                \frac{1}{r_{i+\tfrac12}} +
+                \frac{1}{r_{i-\tfrac12}}
+            \right) \\
+        d^{(2)}_{\theta;i,j}(1)  &= \frac{1}{r_i \Delta \theta^2} \frac{1}{r_{i+\tfrac12}} \\
+        d^{(2)}_{r;i,j}(-1) &= \frac{1}{r_i \Delta r^2} r_{i-\tfrac12} \\
+        d^{(2)}_{r;i,j}(0)  &= -\frac{1}{r_i \Delta r^2} \left(r_{i+\tfrac12} + r_{i-\tfrac12}\right) \\
+        d^{(2)}_{r;i,j}(1)  &= \frac{1}{r_i \Delta r^2} r_{i+\tfrac12}
+    \end{split}
+\end{equation}
+
+\subsection{Time Integration}
+
+The spatial derivatives of Eq. \eqref{eq:navier-stokes} are discretized with the correction for the immersed boundary as described above.
+\begin{equation}
+    \pd{u_{i,j}}{t}
+    = -\lambda_{i,j} \nu u_{i,j} +  R_{i,j}
+    = -\lambda_{i,j} \nu u_{i,j}
+    + d^{(2)}_{x;i,j}( 0) u_{i,  j}
+    + d^{(2)}_{x;i,j}( 1) u_{i+1,j}
+    + \dots
+    \label{eq:ODE-update}
+\end{equation}
+The variable $R_{i,j}$ combines all spatial terms, only the first part of the discretized Laplacian is shown explicitly \cite{luchiniSimpleEfficientSecondorder2025}.
+We again assume that the immersed interface is located to the left of point $(i,j)$.
+
+This becomes a stiff problem whenever the immersed interface is close to a grid point.
+Then $\delta x \to 0$ and $\lambda \to \infty$.
+Therefore, the regular, uncorrected right-hand-side is treated explicitly but the correction implicitly.
+
+Using the implicit Euler discretization for the correction, we obtain
+\begin{equation}
+    \begin{split}
+        &\frac{u_{i,j}^{n+1} - u_{i,j}^n}{\Delta t} =
+        -\lambda_{i,j} \nu u_{i,j}^{n+1} + R_{i,j}^n \\
+        \Rightarrow\ 
+        &u_{i,j}^{n+1} =
+        \frac{u_{i,j}^n + \Delta t R_{i,j}^n}{1 + \Delta t \lambda_{i,j} \nu}
+    \end{split}
+\end{equation}
+which is a simple addition to the vanilla numerical method.
+
+For higher-accuracy, Luchini et al. use the analytical solution of the ODE \eqref{eq:ODE-update}.
+They assume that $R_{i,j}$ is constant during the integration.
+They then get the general update rule
+\begin{equation}
+    \begin{split}
+        &A u_{i,j}^{n+1} - B u_{i,j}^n = C F_{i,j}^n \\
+        \Rightarrow\ 
+        &u_{i,j}^{n+1} = \frac{B u_{i,j}^n + C F_{i,j}^n}{A}
+    \end{split}
+    \label{eq:analytical-correction}
+\end{equation}
+with
+\begin{equation}
+    \begin{split}
+        &B = \frac{\lambda_{i,j} \nu \Delta t}{\exp(\lambda_{i,j} \nu \Delta t) - 1} \\
+        &A = \lambda_{i,j} \nu \Delta t + B \\
+        &C = \Delta t.
+    \end{split}
+\end{equation}
+The variable $F_{i,j}^n$ is a placeholder for the explicit evaluation of the right-hand-side at any time level as the method requires.
+In the simplest case we have $F_{i,j}^n = R_{i,j}^n$.
+
+\subsection{Further Remarks}
+
+\begin{itemize}
+    \item The velocity values inside of the solid must be set to zero.
+    \item The corrections are linear and can be calculated for each direction separately and then added.
+    \item The calculated value for the velocity is the predicted value in the prediction-correction scheme.
+    This has to be corrected for it to be divergence-free.
+    The pressure Poisson equation is not changed.
+\end{itemize}
+
+\subsection{Moving Walls}
+
+For moving walls we have $u^* \ne 0$.
+The discretized Laplacian then becomes
+\begin{equation}
+    \begin{split}
+        \nabla^2 u \approx
+        \ &d^{(2)}_{x;i,j}(-1) \left[
+            u_{i,j} \left(1 - \frac{\Delta x}{\delta x}\right) +
+            u^* \frac{\Delta x}{\delta x}
+        \right]
+        + d^{(2)}_{x;i,j}( 0) u_{i,  j}
+        + d^{(2)}_{x;i,j}( 1) u_{i+1,j}
+        + \dots
+    \end{split}
+\end{equation}
+
+The term $d^{(2)}_{x;i,j}(-1) u^* \frac{\Delta x}{\delta x}$ cannot be absorbed into $d^{(2)}_{x;i,j}(0)$.
+We therefore have an additional term in the correction $\eta = d^{(2)}_{x;i,j}(-1) \frac{u^*}{\xi}$.
+
+\begin{equation}
+    \begin{split}
+        \pd{u_{i,j}}{t}
+        &= -\lambda_{i,j} \nu u_{i,j} + \nu \eta_{i,j} +  R_{i,j} \\
+        &= -\lambda_{i,j} \nu u_{i,j} + \nu \eta_{i,j}
+        + d^{(2)}_{x;i,j}( 0) u_{i,  j}
+        + d^{(2)}_{x;i,j}( 1) u_{i+1,j}
+        + \dots
+    \end{split}
+\end{equation}
+
+\textcolor{rwth-red-100}{\texttt{[TODO]} This is not complete yet.}
+
+% ==================================================================================================
+\section{Immersed Boundary Conditions for Species Transport}
+
+The conservation of a passive scalar $s$ in an incompressible flow is written as
+\begin{equation}
+    \pd{s}{t} + (\vec{u} \cdot \nabla) s - D \nabla^2 s = 0.
+    \label{eq:species}
+\end{equation}
+Here, $D$ is the diffusion coefficient which is assumed to be constant.
+We can apply the same correction as for the velocity for the scalar transport.
+Now we need to use the diffusion coefficient $D$ instead of the kinematic viscosity $\nu$ and
+the correction must be calculated for the centered cells.
+
+\subsection{Homogeneous Dirichlet Boundary Conditions}
+
+Applying the same derivation to Eq. \eqref{eq:species}, we get the Dirichlet boundary conditions $s = 0$.
+We still calculate $\lambda$ via Eq. \eqref{eq:calc-lambda}.
+
+In the implicit Euler time discretization, we have
+\begin{equation}
+    s_{i,j}^{n+1} =
+    \frac{s_{i,j}^n + \Delta t R_{i,j}^n}{1 + \Delta t D \lambda_{i,j}}
+\end{equation}
+where $R$ are now the discretized spatial derivatives of Eq. \eqref{eq:species} moved to the right-hand-side.
+
+The analytical correction Eq. \eqref{eq:analytical-correction} has parameters
+\begin{equation}
+    \begin{split}
+        &B = \frac{\lambda_{i,j} D \Delta t}{\exp(\lambda_{i,j} D \Delta t) - 1} \\
+        &A = \lambda_{i,j} D \Delta t + B \\
+        &C = \Delta t
+    \end{split}
+\end{equation}
+
+\subsection{Neumann Boundary Conditions}
+
+For most applications, homogeneous Dirichlet boundary conditions are not the right choice for the species equation.
+One usually chooses Neumann boundary conditions
+\begin{equation}
+    \nabla s \cdot \vec{n} = v.
+\end{equation}
+Here $\vec{n}$ is the outwards pointing normal and $v$ a chosen value.
+
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[>=stealth, scale=2, line width=2]
+        \draw (0, 0) -- (3, 0);
+        \draw (0, 1) -- (3, 1);
+        \draw (0, 2) -- (3, 2);
+        \draw (0, 3) -- (3, 3);
+        \draw (0, 0) -- (0, 3);
+        \draw (1, 0) -- (1, 3);
+        \draw (2, 0) -- (2, 3);
+        \draw (3, 0) -- (3, 3);
+        \node[below left] at (0, 1.5) {$(i-1,j)$};
+        \node[below right] at (1, 1.5) {$(i,j)$};
+        
+        \draw[rwth-black-75] (0.2, -0.1) -- (0.6, 3.1);
+        \draw[->, rwth-black-75] (0.4, 1.5) -- (0.4-3*0.99/4, 1.5+3*0.12/4) node [above] {$\vec{n}$};
+
+        \draw[->, rwth-red-100] (-0.2, 1.5) -- (0.2, 1.5);
+        \draw[->, rwth-red-100] ( 0.8, 1.5) -- (1.2, 1.5);
+        \draw[->, rwth-red-100] ( 1.8, 1.5) -- (2.2, 1.5);
+        \draw[->, rwth-red-100] ( 0.8, 0.5) -- (1.2, 0.5);
+        \draw[->, rwth-red-100] ( 0.8, 2.5) -- (1.2, 2.5);
+
+        \draw[|-|, line width=1.5, rwth-purple-100] (0, 1.5) -- (0.4, 1.5);
+        \node[below, rwth-purple-100] at (0.2, 1.5) {$\overline{\delta x}$};
+        \draw[|-|, line width=1.5, rwth-purple-100] (0.4, 1.5) -- (1, 1.5);
+        \node[below, rwth-purple-100] at (0.7, 1.5) {$\delta x$};
+    \end{tikzpicture}
+    \caption{
+        Immersed boundary to the left of point $(i,j)$.
+        Here $\overline{\delta x} = \Delta x - \delta x$.
+        The vector $\vec{n}$ points into the solid.
+    }
+    \label{fig:ib-to-left-neumann}
+\end{figure}
+
+\textcolor{rwth-red-100}{\texttt{[TODO]} How can we incorporate Neumann boundary conditions?}
+Idea: Extrapolate the values using the slope from the Neumann condition.
+Is the Neumann condition enough to uniquely define the extrapolation?
+
+Alternative: Use a different method, like the cut-cell method for scalars.
+
+\newpage
+\printbibliography
+
+\end{document}
