@@ -57,6 +57,12 @@ bin/test/IB-Polar-Channel-IE: test/IB-Polar-Channel.cpp ${HEADERS} | bin/test te
 bin/test/IB-Polar-Channel-SA: test/IB-Polar-Channel.cpp ${HEADERS} | bin/test test/output
 	${CXX} ${CXX_FLAGS} ${CXX_INC} -DSEMI_ANALYTICAL=1 -o $@ $< ${CXX_LIB}
 
+bin/test/IB-Cartesian-Channel-in-Polar-IE: test/IB-Cartesian-Channel-in-Polar.cpp ${HEADERS} | bin/test test/output
+	${CXX} ${CXX_FLAGS} ${CXX_INC} -o $@ $< ${CXX_LIB}
+
+bin/test/IB-Cartesian-Channel-in-Polar-SA: test/IB-Cartesian-Channel-in-Polar.cpp ${HEADERS} | bin/test test/output
+	${CXX} ${CXX_FLAGS} ${CXX_INC} -DSEMI_ANALYTICAL=1 -o $@ $< ${CXX_LIB}
+
 test/output bin/test: %:
 	mkdir -p $@
 
