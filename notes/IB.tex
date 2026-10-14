@@ -356,6 +356,8 @@ One usually chooses Neumann boundary conditions
 \end{equation}
 Here $\vec{n}$ is the outwards pointing normal and $v$ a chosen value.
 
+These kind of boundaries are not easily implemented with the method by Luchini et al.
+
 \begin{figure}[h]
     \centering
     \begin{tikzpicture}[>=stealth, scale=2, line width=2]
@@ -391,12 +393,6 @@ Here $\vec{n}$ is the outwards pointing normal and $v$ a chosen value.
     }
     \label{fig:ib-to-left-neumann}
 \end{figure}
-
-\textcolor{rwth-red-100}{\texttt{[TODO]} How can we incorporate Neumann boundary conditions?}
-Idea: Extrapolate the values using the slope from the Neumann condition.
-Is the Neumann condition enough to uniquely define the extrapolation?
-
-Alternative: Use a different method, like the cut-cell method for scalars.
 
 \newpage
 \printbibliography

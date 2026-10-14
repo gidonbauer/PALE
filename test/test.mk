@@ -63,6 +63,15 @@ bin/test/IB-Cartesian-Channel-in-Polar-IE: test/IB-Cartesian-Channel-in-Polar.cp
 bin/test/IB-Cartesian-Channel-in-Polar-SA: test/IB-Cartesian-Channel-in-Polar.cpp ${HEADERS} | bin/test test/output
 	${CXX} ${CXX_FLAGS} ${CXX_INC} -DSEMI_ANALYTICAL=1 -o $@ $< ${CXX_LIB}
 
+bin/test/Aslam-Constant: test/AslamExtrapolation.cpp ${HEADERS} | bin/test test/output
+	${CXX} ${CXX_FLAGS} ${CXX_INC} -DEXTRAPOLATION_ORDER=0 -o $@ $< ${CXX_LIB}
+
+bin/test/Aslam-Linear: test/AslamExtrapolation.cpp ${HEADERS} | bin/test test/output
+	${CXX} ${CXX_FLAGS} ${CXX_INC} -DEXTRAPOLATION_ORDER=1 -o $@ $< ${CXX_LIB}
+
+bin/test/Aslam-Quadratic: test/AslamExtrapolation.cpp ${HEADERS} | bin/test test/output
+	${CXX} ${CXX_FLAGS} ${CXX_INC} -DEXTRAPOLATION_ORDER=2 -o $@ $< ${CXX_LIB}
+
 test/output bin/test: %:
 	mkdir -p $@
 

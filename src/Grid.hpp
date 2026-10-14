@@ -93,6 +93,13 @@ constexpr auto operator/(Vec2<Float> lhs, Float rhs) -> Vec2<Float> {
 }
 
 template <typename Float>
+constexpr auto operator/=(Vec2<Float>& lhs, Float rhs) -> Vec2<Float> {
+  lhs.x /= rhs;
+  lhs.y /= rhs;
+  return lhs;
+}
+
+template <typename Float>
 [[nodiscard]] constexpr auto norm(const Vec2<Float>& vec) noexcept -> Float {
   return Igor::sqrt(Igor::sqr(vec.x) + Igor::sqr(vec.y));
 }
@@ -290,6 +297,26 @@ class Grid {
     auto y = alloc(m_nx, m_ny + 1, m_nghost);
     return {x, y};
   }
+
+  constexpr void free(Scalar s) const noexcept {
+    const auto it = std::find(m_to_free->begin(), m_to_free->end(), s.data());
+    if (it == m_to_free->end()) {
+      Igor::Panic("The field with memory location {} was not allocated by this grid.",
+                  static_cast<void*>(s.data()));
+    }
+    m_to_free->erase(it);
+    // TODO: Re-use freed memory
+    std::free(s.data());  // NOLINT
+  }
+  constexpr void free(Vector v) const noexcept {
+    free(v.x);
+    free(v.y);
+  }
+  constexpr void free(FaceVector v) const noexcept {
+    free(v.x);
+    free(v.y);
+  }
+  constexpr void free(VertexScalar s) const noexcept { free(s.scalar()); }
 
   // ===============================================================================================
   // = foreach =====================================================================================
