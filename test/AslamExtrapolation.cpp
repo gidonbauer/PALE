@@ -15,6 +15,7 @@
 #include "Test-Common.hpp"
 
 #ifndef EXTRAPOLATION_ORDER
+// NOLINTNEXTLINE
 #define EXTRAPOLATION_ORDER 0
 #endif  // EXTRAPOLATION_ORDER
 
@@ -34,38 +35,38 @@ namespace Expected {
 
 constexpr std::array ns     = {16, 32, 64, 128, 256, 512, 1024};
 constexpr std::array L1s_bc = {
-    1.885017002079e+00,
-    4.004804173020e-01,
-    1.454171212535e-01,
-    2.997703603400e-02,
-    7.954459223849e-03,
-    1.947892606690e-03,
-    4.671124426510e-04,
+    6.914268734335e-02,
+    2.140080310971e-02,
+    1.690965969347e-02,
+    7.511566069029e-03,
+    4.157310833304e-03,
+    2.059576246615e-03,
+    1.000232171813e-03,
 };
 constexpr std::array L1s_bl = {
-    2.484461044747e+00,
-    3.642126369932e-01,
-    5.232710050122e-02,
-    4.966248384123e-03,
-    6.639027621351e-04,
-    7.753458440821e-05,
-    9.145154878916e-06,
+    9.562740664038e-02,
+    1.948384562686e-02,
+    6.083316141843e-03,
+    1.244389453128e-03,
+    3.468374659071e-04,
+    8.197649317376e-05,
+    1.960065225332e-05,
 };
 constexpr std::array L1s_bq = {
-    7.156618989221e+00,
-    8.897251342536e-01,
-    5.400456590453e-02,
-    2.799026085915e-03,
-    1.665369183605e-04,
-    1.049372163606e-05,
-    6.446166250686e-07,
+    2.579999523437e-01,
+    4.710281397358e-02,
+    6.282780176066e-03,
+    7.017925998244e-04,
+    8.724374782096e-05,
+    1.110287230971e-05,
+    1.368174702030e-06,
 };
 
 constexpr auto L1_band(Index N) {
   switch (EXTRAPOLATION_ORDER) {
-    case 0:  return interp_pow(ns, L1s_bc, N, 2);
-    case 1:  return interp_pow(ns, L1s_bl, N, 3);
-    case 2:  return interp_pow(ns, L1s_bq, N, 4);
+    case 0:  return interp_pow(ns, L1s_bc, N, 1);
+    case 1:  return interp_pow(ns, L1s_bl, N, 2);
+    case 2:  return interp_pow(ns, L1s_bq, N, 3);
     default: Igor::Panic("Invalid order `{}`", EXTRAPOLATION_ORDER);
   }
 }
@@ -145,10 +146,11 @@ constexpr auto u_expected_quadratic(double x, double y) -> Float {
 }
 
 constexpr auto order2str() -> std::string {
+  using namespace std::string_literals;
   switch (EXTRAPOLATION_ORDER) {
-    case 0:  return "Constant";
-    case 1:  return "Linear";
-    case 2:  return "Quadratic";
+    case 0:  return "Constant"s;
+    case 1:  return "Linear"s;
+    case 2:  return "Quadratic"s;
     default: Igor::Panic("Invalid order `{}`", EXTRAPOLATION_ORDER);
   }
 }
@@ -183,7 +185,7 @@ auto main(int argc, char** argv) -> int {
   grid.foreach_a(FOREACH_FUNC {
     const auto x = grid.xm(i);
     const auto y = grid.ym(j);
-    psi(i, j)    = std::sqrt(Igor::sqr(x - c.x) + Igor::sqr(y - c.y)) - c.r;
+    psi(i, j)    = c.levelset(x, y);
     u(i, j)      = psi(i, j) > 0.0 ? 0.0 : u_func(x, y);
     switch (EXTRAPOLATION_ORDER) {
       case 0:  u_exp(i, j) = u_expected_constant(x, y); break;
@@ -215,27 +217,38 @@ auto main(int argc, char** argv) -> int {
   }
   writer.write(1.0);
 
-  const auto L1 = grid.transform_reduce_i(
-      0.0, FOREACH_FUNC { return std::abs(u(i, j) - u_exp(i, j)) * grid.dv(i, j); }, std::plus<>{});
-
-  const auto L1_band = grid.transform_reduce_i(
-      0.0,
+  struct Err {
+    Float L1;
+    Float L1_band;
+    Float vol_band;
+  };
+  Err e = grid.transform_reduce_i(
+      Err{},
       FOREACH_FUNC {
-        if (0.0 <= psi(i, j) && psi(i, j) <= band_size) {
-          return std::abs(u(i, j) - u_exp(i, j)) * grid.dv(i, j);
-        }
-        return 0.0;
+        const auto in_band  = 0.0 <= psi(i, j) && psi(i, j) <= band_size;
+        const auto abs_diff = std::abs(u(i, j) - u_exp(i, j)) * grid.dv(i, j);
+        return Err{
+            .L1       = abs_diff,
+            .L1_band  = in_band ? abs_diff : 0.0,
+            .vol_band = in_band ? grid.dv(i, j) : 0.0,
+        };
       },
-      std::plus<>{});
+      [](Err lhs, const Err& rhs) {
+        lhs.L1       += rhs.L1;
+        lhs.L1_band  += rhs.L1_band;
+        lhs.vol_band += rhs.vol_band;
+        return lhs;
+      });
+  e.L1_band /= e.vol_band;
 
   Igor::Info("{} extrapolation", order2str());
-  Igor::Info("L1({})      = {:.12e}", N, L1);
-  Igor::Info("L1_band({}) = {:.12e}", N, L1_band);
+  Igor::Info("L1({})      = {:.12e}", N, e.L1);
+  Igor::Info("L1_band({}) = {:.12e}", N, e.L1_band);
 
-  if (L1_band > 1.1 * Expected::L1_band(N)) {
-    Igor::Error("s error does not match expected value: expected {:.8e} but got {:.8e}",
+  if (e.L1_band > 1.1 * Expected::L1_band(N)) {
+    Igor::Error("Band error does not match expected value: expected {:.8e} but got {:.8e}",
                 Expected::L1_band(N),
-                L1);
+                e.L1_band);
     return 1;
   }
 }

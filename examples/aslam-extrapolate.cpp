@@ -1,4 +1,5 @@
 #include <charconv>
+#include <fstream>
 #include <numbers>
 
 #include <Igor/Defer.hpp>
@@ -92,56 +93,21 @@ constexpr auto u_expected_quadratic(double x, double y) -> Float {
 }
 
 // =================================================================================================
-auto main(int argc, char** argv) -> int {
-  const auto usage_str =
-      Igor::detail::format("Usage: {} [-e=[constant|linear|quadratic]] <grid size>", argv[0]);
-
-  enum class Method { CONSTANT, LINEAR, QUADRATIC };
-
-  Index N       = 0;
-  Method method = Method::CONSTANT;
-  for (int i = 1; i < argc; ++i) {
-    std::string_view arg(argv[i]);
-    if (arg.starts_with("-e")) {
-      arg.remove_prefix(std::strlen("-e"));
-      if (arg.starts_with('=')) {
-        arg.remove_prefix(1);
-      } else {
-        if (i + 1 >= argc) {
-          Igor::Error("Expected argument for `{}`", argv[i]);
-          return 1;
-        }
-        i   += 1;
-        arg  = argv[i];
-      }
-      if (arg == "constant" || arg == "const" || arg == "c") {
-        method = Method::CONSTANT;
-      } else if (arg == "linear" || arg == "l") {
-        method = Method::LINEAR;
-      } else if (arg == "quadratic" || arg == "q") {
-        method = Method::QUADRATIC;
-      } else {
-        Igor::Error("{}", usage_str);
-        Igor::Error("  Invalid extrapolation method `{}`", arg);
-        return 1;
-      }
-    } else {
-      if (std::from_chars(arg.data(), arg.data() + arg.size(), N).ec != std::errc{} || N <= 0) {
-        Igor::Error("{}", usage_str);
-        Igor::Error("  Invalid grid size `{}`", arg);
-        return 1;
-      }
-    }
+enum class Method { CONSTANT, LINEAR, QUADRATIC };
+constexpr auto method2str(Method method) -> std::string {
+  using namespace std::string_literals;
+  switch (method) {
+    case Method::CONSTANT:  return "Constant"s;
+    case Method::LINEAR:    return "Linear"s;
+    case Method::QUADRATIC: return "Quadratic"s;
   }
+}
 
-  if (N == 0) {
-    Igor::Error("{}", usage_str);
-    Igor::Error("  Did not provide grid size.");
-    return 1;
-  }
-
-  const auto output_dir = get_output_directory();
-  if (!init_output_directory(output_dir)) { return 1; }
+constexpr auto run(Method method, Index N, const std::string& base_output_dir, std::ostream& out)
+    -> bool {
+  const auto output_dir =
+      base_output_dir + "/" + method2str(method) + "/" + std::to_string(N) + "/";
+  if (!init_output_directory(output_dir)) { return false; }
 
   Grid<Float> grid(-L / 2.0, L / 2.0, N, -L / 2.0, L / 2.0, N, 3);
 
@@ -153,7 +119,7 @@ auto main(int argc, char** argv) -> int {
   grid.foreach_a(FOREACH_FUNC {
     const auto x = grid.xm(i);
     const auto y = grid.ym(j);
-    psi(i, j)    = std::sqrt(Igor::sqr(x - c.x) + Igor::sqr(y - c.y)) - c.r;
+    psi(i, j)    = c.levelset(x, y);
     u(i, j)      = psi(i, j) > 0.0 ? 0.0 : u_func(x, y);
     switch (method) {
       case Method::CONSTANT:  u_exp(i, j) = u_expected_constant(x, y); break;
@@ -174,7 +140,7 @@ auto main(int argc, char** argv) -> int {
 #else
   const double tau_end = 4.0 * band_size;
 #endif
-  IGOR_TIME_SCOPE("Extrapolation") {
+  IGOR_TIME_SCOPE(method2str(method) + " extrapolation " + std::to_string(N)) {
     switch (method) {
       case Method::CONSTANT:  constant_extrapolate(grid, u, psi, tau_end); break;
       case Method::LINEAR:    linear_extrapolate(grid, u, psi, tau_end); break;
@@ -183,24 +149,71 @@ auto main(int argc, char** argv) -> int {
   }
   writer.write(1.0);
 
-  const auto L1 = grid.transform_reduce_i(
-      0.0, FOREACH_FUNC { return std::abs(u(i, j) - u_exp(i, j)) * grid.dv(i, j); }, std::plus<>{});
-
-  const auto L1_band = grid.transform_reduce_i(
-      0.0,
+  struct Err {
+    Float L1;
+    Float L1_band;
+    Float vol_band;
+  };
+  Err e = grid.transform_reduce_i(
+      Err{},
       FOREACH_FUNC {
-        if (0.0 <= psi(i, j) && psi(i, j) <= band_size) {
-          return std::abs(u(i, j) - u_exp(i, j)) * grid.dv(i, j);
-        }
-        return 0.0;
+        const auto in_band  = 0.0 <= psi(i, j) && psi(i, j) <= band_size;
+        const auto abs_diff = std::abs(u(i, j) - u_exp(i, j)) * grid.dv(i, j);
+        return Err{
+            .L1       = abs_diff,
+            .L1_band  = in_band ? abs_diff : 0.0,
+            .vol_band = in_band ? grid.dv(i, j) : 0.0,
+        };
       },
-      std::plus<>{});
+      [](Err lhs, const Err& rhs) {
+        lhs.L1       += rhs.L1;
+        lhs.L1_band  += rhs.L1_band;
+        lhs.vol_band += rhs.vol_band;
+        return lhs;
+      });
+  e.L1_band /= e.vol_band;
 
-  switch (method) {
-    case Method::CONSTANT:  Igor::Info("Constant extrapolation"); break;
-    case Method::LINEAR:    Igor::Info("Linear extrapolation"); break;
-    case Method::QUADRATIC: Igor::Info("Quadratic extrapolation"); break;
+  out << method2str(method) << ','                                     //
+      << N << ','                                                      //
+      << std::setprecision(12) << std::scientific << e.L1 << ','       //
+      << std::setprecision(12) << std::scientific << e.L1_band << ','  //
+      << std::setprecision(12) << std::scientific << e.vol_band << '\n'
+      << std::flush;
+  return true;
+}
+
+// =================================================================================================
+auto main(int argc, char** argv) -> int {
+  const auto usage_str = Igor::detail::format("Usage: {} <max. level>", argv[0]);
+
+  if (argc < 2) {
+    Igor::Error("{}", usage_str);
+    Igor::Error("  Did not provide max. level.");
+    return 1;
   }
-  Igor::Info("L1({})      = {:.12e}", N, L1);
-  Igor::Info("L1_band({}) = {:.12e}", N, L1_band);
+
+  Index max_level = 0;
+  if (std::from_chars(argv[1], argv[1] + std::strlen(argv[1]), max_level).ec != std::errc{} ||
+      max_level <= 0) {
+    Igor::Error("{}", usage_str);
+    Igor::Error("  Invalid max. level `{}`", argv[1]);
+    return 1;
+  }
+
+  const auto output_dir = get_output_directory();
+  if (!init_output_directory(output_dir)) { return 1; }
+  const auto scaling_filename = output_dir + "/scaling.csv";
+  std::ofstream out(scaling_filename);
+  if (!out) {
+    Igor::Error("Could not open file `{}`: {}", scaling_filename, std::strerror(errno));
+    return 1;
+  }
+
+  out << "method,N,L1,L1_band,vol_band\n";
+
+  for (Method method : {Method::CONSTANT, Method::LINEAR, Method::QUADRATIC}) {
+    for (Index level = 4; level <= max_level; ++level) {
+      run(method, 1 << level, output_dir, out);
+    }
+  }
 }
