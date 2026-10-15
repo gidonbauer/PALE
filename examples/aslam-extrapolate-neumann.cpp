@@ -108,7 +108,7 @@ auto main(int argc, char** argv) -> int {
 #else
   const double tau_end = 4.0 * band_size;
 #endif
-  IGOR_TIME_SCOPE("Extrapolation") { neumann_extrapolate(grid, u, psi, dudn, tau_end); }
+  IGOR_TIME_SCOPE("Extrapolation") { neumann_extrapolate<1>(grid, u, psi, dudn, tau_end); }
 
   grid.foreach_i(FOREACH_FUNC {
     if (psi(i, j) < 0.0) {

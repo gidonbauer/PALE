@@ -278,7 +278,7 @@ constexpr void quadratic_extrapolate(const Grid<Float, LAYOUT>& grid,
 }
 
 // =================================================================================================
-template <bool linear = true,
+template <Index ORDER = 1,
           typename Float,
           Layout LAYOUT,
           IsNoneOr<Vector<Float, LAYOUT>> N_t   = None,
@@ -289,7 +289,9 @@ constexpr void neumann_extrapolate(const Grid<Float, LAYOUT>& grid,
                                    Float dfdn,
                                    Float tau_end = 0.1,
                                    N_t n_in      = None{}) {
-  if (linear) {
+  static_assert(ORDER == 1 || ORDER == 2,
+                "ORDER can be 1 for linear or 2 for quadratic extrapolation.");
+  if (ORDER == 1) {
     auto fn = grid.alloc_scalar();
     IGOR_DEFER(grid.free(fn););
     grid.foreach_i(FOREACH_FUNC { fn(i, j) = psi(i, j) > 0.0 ? dfdn : 0.0; });

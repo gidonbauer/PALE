@@ -73,8 +73,8 @@ constexpr auto stats(const Grid<Float, LAYOUT>& grid,
       },
       FOREACH_FUNC->Stats<Float> {
         return Stats<Float>{
-            .min    = f(i, j),
-            .max    = f(i, j),
+            .min    = metric(i, j) * f(i, j),
+            .max    = metric(i, j) * f(i, j),
             .sum    = metric(i, j) * grid.dv(i, j) * f(i, j),
             .stddev = metric(i, j) * grid.dv(i, j) * Igor::sqr(f(i, j)),
             .volume = metric(i, j) * grid.dv(i, j),

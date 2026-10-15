@@ -421,7 +421,7 @@ auto main(int argc, char** argv) -> int {
       apply_bconds(grid, s_bconds, s, t);
 #else
       const auto band_size = 4.0 * 6.0 * std::max(grid.dx(), grid.dy());
-      neumann_extrapolate<false>(grid, s, ib_levelset, ib_dsdn, band_size);
+      neumann_extrapolate<2>(grid, s, ib_levelset, ib_dsdn, band_size);
       calc_advection_flux(grid, u, s, D, FS);
       update_s(grid, local_dt, FS, s_old, s);
       apply_bconds(grid, s_bconds, s, t);
