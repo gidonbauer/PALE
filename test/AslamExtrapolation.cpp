@@ -6,6 +6,7 @@
 #include <Igor/Math.hpp>
 #include <Igor/Timer.hpp>
 
+// #define PALE_ASLAM_WENO
 #include "AslamExtrapolation.hpp"
 #include "Geometry.hpp"
 #include "Grid.hpp"
@@ -33,33 +34,39 @@ constexpr Ring<Float> c{.x = 0.0, .y = 0.0, .r = 2.0, .w = L};
 // =================================================================================================
 namespace Expected {
 
-constexpr std::array ns     = {16, 32, 64, 128, 256, 512, 1024};
+constexpr std::array ns = {16, 32, 64, 128, 256, 512, 1024};
+
+#ifdef PALE_ASLAM_WENO
+constexpr Float factor = 1.0;
+#else
+constexpr Float factor = 1.5;
+#endif
 constexpr std::array L1s_bc = {
-    6.914268734335e-02,
-    2.140080310971e-02,
-    1.690965969347e-02,
-    7.511566069029e-03,
-    4.157310833304e-03,
-    2.059576246615e-03,
-    1.000232171813e-03,
+    factor * 6.914268734335e-02,
+    factor * 2.140080310971e-02,
+    factor * 1.690965969347e-02,
+    factor * 7.511566069029e-03,
+    factor * 4.157310833304e-03,
+    factor * 2.059576246615e-03,
+    factor * 1.000232171813e-03,
 };
 constexpr std::array L1s_bl = {
-    9.562740664038e-02,
-    1.948384562686e-02,
-    6.083316141843e-03,
-    1.244389453128e-03,
-    3.468374659071e-04,
-    8.197649317376e-05,
-    1.960065225332e-05,
+    factor * 9.562740664038e-02,
+    factor * 1.948384562686e-02,
+    factor * 6.083316141843e-03,
+    factor * 1.244389453128e-03,
+    factor * 3.468374659071e-04,
+    factor * 8.197649317376e-05,
+    factor * 1.960065225332e-05,
 };
 constexpr std::array L1s_bq = {
-    2.579999523437e-01,
-    4.710281397358e-02,
-    6.282780176066e-03,
-    7.017925998244e-04,
-    8.724374782096e-05,
-    1.110287230971e-05,
-    1.368174702030e-06,
+    factor * 2.579999523437e-01,
+    factor * 4.710281397358e-02,
+    factor * 6.282780176066e-03,
+    factor * 7.017925998244e-04,
+    factor * 8.724374782096e-05,
+    factor * 1.110287230971e-05,
+    factor * 1.368174702030e-06,
 };
 
 constexpr auto L1_band(Index N) {

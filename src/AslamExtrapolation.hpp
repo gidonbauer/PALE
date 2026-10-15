@@ -2,8 +2,11 @@
 
 #include <Igor/Defer.hpp>
 
+#include "BoundaryConditions.hpp"
 #include "Grid.hpp"
+#ifdef PALE_ASLAM_WENO
 #include "WENO5.hpp"
+#endif  // ALE_ASLAM_WENO
 
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
@@ -36,14 +39,14 @@ constexpr void advection_velocity(const Grid<Float, LAYOUT>& grid,
 
 // =================================================================================================
 template <typename Float, Layout LAYOUT, IsNoneOr<Scalar<Float, LAYOUT>> SRC_t>
-constexpr void aslam_advection_do_step(const Grid<Float, LAYOUT>& grid,
-                                       Float dt,
-                                       const Scalar<Float, LAYOUT> f_old,
-                                       const Vector<Float, LAYOUT> u,
-                                       const FaceVector<Float, LAYOUT> fL,
-                                       const FaceVector<Float, LAYOUT> fR,
-                                       const SRC_t src,
-                                       Scalar<Float, LAYOUT> f) {
+constexpr void aslam_advection_do_step_weno(const Grid<Float, LAYOUT>& grid,
+                                            Float dt,
+                                            const Scalar<Float, LAYOUT> f_old,
+                                            const Vector<Float, LAYOUT> u,
+                                            const FaceVector<Float, LAYOUT> fL,
+                                            const FaceVector<Float, LAYOUT> fR,
+                                            const SRC_t src,
+                                            Scalar<Float, LAYOUT> f) {
   grid.foreach_i(FOREACH_FUNC {
     const double f_minus = u.x(i, j) >= 0.0 ? fL.x(i, j) : fR.x(i, j);
     const double f_plus  = u.x(i, j) >= 0.0 ? fL.x(i + 1, j) : fR.x(i + 1, j);
@@ -54,6 +57,66 @@ constexpr void aslam_advection_do_step(const Grid<Float, LAYOUT>& grid,
                                                u.y(i, j) * (g_plus - g_minus) / grid.dy());
     if constexpr (!IsNone<SRC_t>) { f(i, j) += dt * src(i, j); }
   });
+}
+
+// =================================================================================================
+template <typename Float, Layout LAYOUT, IsNoneOr<Scalar<Float, LAYOUT>> SRC_t>
+constexpr void aslam_advection_do_step_minmod(const Grid<Float, LAYOUT>& grid,
+                                              Float dt,
+                                              const Scalar<Float, LAYOUT> f_old,
+                                              const Vector<Float, LAYOUT> u,
+                                              const SRC_t src,
+                                              Scalar<Float, LAYOUT> dfdt,
+                                              Scalar<Float, LAYOUT> f) {
+  auto aslam_minmod = [](double a, double b) {
+    if (a * b <= 0.0) { return 0.0; }
+    return std::abs(a) < std::abs(b) ? a : b;
+  };
+
+  grid.foreach_i(FOREACH_FUNC {
+    dfdt(i, j) = 0.0;
+    // x-direction
+    {
+      // first differences
+      const auto Dm = (f(i, j) - f(i - 1, j)) / grid.dx();  // backward
+      const auto Dp = (f(i + 1, j) - f(i, j)) / grid.dx();  // forward
+
+      // second differences (undivided) for the limiter
+      const auto c_m = f(i, j) - 2.0 * f(i - 1, j) + f(i - 2, j);  // curvature left of i
+      const auto c_c = f(i + 1, j) - 2.0 * f(i, j) + f(i - 1, j);  // curvature at i
+      const auto c_p = f(i + 2, j) - 2.0 * f(i + 1, j) + f(i, j);  // curvature right of i
+
+      // one-sided 2nd-order derivatives with MinMod curvature correction
+      const auto fx_minus  = Dm + 0.5 * aslam_minmod(c_m, c_c) / grid.dx();
+      const auto fx_plus   = Dp - 0.5 * aslam_minmod(c_c, c_p) / grid.dx();
+
+      const auto fx        = u.x(i, j) >= 0.0 ? fx_minus : fx_plus;
+      dfdt(i, j)          -= u.x(i, j) * fx;
+    }
+
+    // y-direction
+    {
+      // first differences
+      const auto Dm = (f(i, j) - f(i, j - 1)) / grid.dy();  // backward
+      const auto Dp = (f(i, j + 1) - f(i, j)) / grid.dy();  // forward
+
+      // second differences (undivided) for the limiter
+      const auto c_m = f(i, j) - 2.0 * f(i, j - 1) + f(i, j - 2);  // curvature left of i
+      const auto c_c = f(i, j + 1) - 2.0 * f(i, j) + f(i, j - 1);  // curvature at i
+      const auto c_p = f(i, j + 2) - 2.0 * f(i, j + 1) + f(i, j);  // curvature right of i
+
+      // one-sided 2nd-order derivatives with MinMod curvature correction
+      const auto fy_minus  = Dm + 0.5 * aslam_minmod(c_m, c_c) / grid.dy();
+      const auto fy_plus   = Dp - 0.5 * aslam_minmod(c_c, c_p) / grid.dy();
+
+      const auto fy        = u.y(i, j) >= 0.0 ? fy_minus : fy_plus;
+      dfdt(i, j)          -= u.y(i, j) * fy;
+    }
+
+    if constexpr (!IsNone<SRC_t>) { dfdt(i, j) += src(i, j); }
+  });
+
+  grid.foreach_i(FOREACH_FUNC { f(i, j) = f_old(i, j) + dt * dfdt(i, j); });
 }
 
 // =================================================================================================
@@ -134,21 +197,39 @@ constexpr void constant_extrapolate(const Grid<Float, LAYOUT>& grid,
   const Float dtau    = CFL * std::min(grid.dx(), grid.dy());  // Max. velocity is 1
 
   auto f_old          = grid.alloc_scalar();
-  auto fL             = grid.alloc_face_vector();
-  auto fR             = grid.alloc_face_vector();
   IGOR_DEFER(grid.free(f_old););
+#ifdef PALE_ASLAM_WENO
+  auto fL = grid.alloc_face_vector();
+  auto fR = grid.alloc_face_vector();
   IGOR_DEFER(grid.free(fL););
   IGOR_DEFER(grid.free(fR););
+#else
+  auto dfdt = grid.alloc_scalar();
+  IGOR_DEFER(grid.free(dfdt););
+#endif                                                   // PALE_ASLAM_WENO
   for (double tau = 0.0; tau <= tau_end; tau += dtau) {  // NOLINT
     copy(f, f_old);
 
-    // = Half step ===
+    // = First step =====
+#ifdef PALE_ASLAM_WENO
     weno_reconstruction(grid, f, fL, fR);
-    detail::aslam_advection_do_step(grid, 0.5 * dtau, f_old, u, fL, fR, src, f);
+    detail::aslam_advection_do_step_weno(grid, dtau, f_old, u, fL, fR, src, f);
+#else
+    detail::aslam_advection_do_step_minmod(grid, dtau, f_old, u, src, dfdt, f);
+#endif
+    apply_neumann_bconds(grid, f);
 
-    // = Full step ===
+    // For Heun's method
+    grid.foreach_i(FOREACH_FUNC { f(i, j) = 0.5 * (f_old(i, j) + f(i, j)); });
+
+    // = Second step ====
+#ifdef PALE_ASLAM_WENO
     weno_reconstruction(grid, f, fL, fR);
-    detail::aslam_advection_do_step(grid, dtau, f_old, u, fL, fR, src, f);
+    detail::aslam_advection_do_step_weno(grid, dtau, f_old, u, fL, fR, src, f);
+#else
+    detail::aslam_advection_do_step_minmod(grid, dtau, f_old, u, src, dfdt, f);
+#endif
+    apply_neumann_bconds(grid, f);
   }
 }
 
