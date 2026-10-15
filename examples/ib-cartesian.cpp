@@ -8,6 +8,7 @@
 #include <Igor/Timer.hpp>
 
 #include "Advection-Diffusion.hpp"
+#include "AslamExtrapolation.hpp"
 #include "BoundaryConditions.hpp"
 #include "Common.hpp"
 #include "Geometry.hpp"
@@ -29,10 +30,10 @@ constexpr Float y_max    = 1.0;
 constexpr Float rho      = 1.0;
 constexpr Float mu       = 1e-3;
 constexpr Float Uavg     = 1.0;
-constexpr Float D        = 1e-1;  // 1e-3;
+constexpr Float D        = 1e-3;
 
 constexpr Float CFL      = 0.7;
-constexpr Float tend     = 1.0;
+constexpr Float tend     = 0.6;
 constexpr Float dt_write = 0.001;
 
 constexpr Circle<Float> wall{.x = 0.5, .y = 0.5, .r = 0.125};
@@ -60,6 +61,7 @@ void correct_outflow(const Grid<Float, LAYOUT>& grid, FaceVector<Float, LAYOUT> 
   }
 }
 
+#if 0
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
 constexpr void correct_scalar_ib_implicit_euler(const Grid<Float, LAYOUT>& grid,
@@ -71,7 +73,6 @@ constexpr void correct_scalar_ib_implicit_euler(const Grid<Float, LAYOUT>& grid,
 }
 
 // =================================================================================================
-#if 0
 namespace OrthogonalCoordinates {
 
 template <typename Metric,
@@ -221,37 +222,42 @@ auto main(int argc, char** argv) -> int {
 
   Grid<Float> grid(x_min, x_max, N, y_min, y_max, N, 3);
 
-  auto u_old          = grid.alloc_face_vector();
-  auto u              = grid.alloc_face_vector();
-  auto ui             = grid.alloc_vector();
+  auto u_old = grid.alloc_face_vector();
+  auto u     = grid.alloc_face_vector();
+  auto ui    = grid.alloc_vector();
 
-  auto FUX            = grid.alloc_scalar();
-  auto FUY            = grid.alloc_vertex_scalar();
-  auto FVX            = grid.alloc_vertex_scalar();
-  auto FVY            = grid.alloc_scalar();
+  auto FUX   = grid.alloc_scalar();
+  auto FUY   = grid.alloc_vertex_scalar();
+  auto FVX   = grid.alloc_vertex_scalar();
+  auto FVY   = grid.alloc_scalar();
 
-  auto p              = grid.alloc_scalar();
-  auto dp             = grid.alloc_scalar();
-  auto div            = grid.alloc_scalar();
+  auto p     = grid.alloc_scalar();
+  auto dp    = grid.alloc_scalar();
+  auto div   = grid.alloc_scalar();
 
-  auto s              = grid.alloc_scalar();
-  auto s_old          = grid.alloc_scalar();
-  auto FS             = grid.alloc_face_vector();
+  auto s     = grid.alloc_scalar();
+  auto s_old = grid.alloc_scalar();
+  auto FS    = grid.alloc_face_vector();
 
-  auto ib_corr_center = grid.alloc_scalar();
-  auto ib_corr_face   = grid.alloc_face_vector();
-  auto ib_wall        = grid.alloc_scalar();
+  // auto ib_corr_center = grid.alloc_scalar();
+  auto ib_corr_face = grid.alloc_face_vector();
+  auto ib_levelset  = grid.alloc_scalar();
+  auto ib_free      = grid.alloc_scalar();
 
-  Float dt            = 0.0;
-  Float t             = 0.0;
+  Float dt          = 0.0;
+  Float t           = 0.0;
 
   grid.foreach_i(FOREACH_FUNC {
-    ib_wall(i, j) = quadrature([](Float x, Float y) { return wall.contains({.x = x, .y = y}); },
-                               grid.x(i),
-                               grid.x(i + 1),
-                               grid.y(j),
-                               grid.y(j + 1)) /
-                    grid.dv(i, j);
+    const auto x      = grid.xm(i);
+    const auto y      = grid.ym(j);
+    ib_levelset(i, j) = wall.levelset(x, y);
+    ib_free(i, j) =
+        1.0 - quadrature([](Float x, Float y) { return wall.contains({.x = x, .y = y}); },
+                         grid.x(i),
+                         grid.x(i + 1),
+                         grid.y(j),
+                         grid.y(j + 1)) /
+                  grid.dv(i, j);
   });
 
   // = Linear solver ===============================================================================
@@ -268,8 +274,8 @@ auto main(int argc, char** argv) -> int {
   // = Linear solver ===============================================================================
 
   const BConds<Float> u_bconds{
-      // .left   = Dirichlet<Float>{.val = [](Float y, Float /*t*/) { return inlet_u(y); }},
-      .left   = Dirichlet<Float>{.val = 0.0},
+      .left = Dirichlet<Float>{.val = [](Float y, Float /*t*/) { return inlet_u(y); }},
+      // .left   = Dirichlet<Float>{.val = 0.0},
       .right  = Neumann(),
       .bottom = Dirichlet<Float>{.val = 0.0},
       .top    = Dirichlet<Float>{.val = 0.0},
@@ -292,17 +298,19 @@ auto main(int argc, char** argv) -> int {
   //     .top    = Neumann(),
   // };
   const BConds<Float> s_bconds{
-      .left   = Dirichlet<Float>{.val = 1.0},
-      .right  = Dirichlet<Float>{.val = 1.0},
-      .bottom = Dirichlet<Float>{.val = 1.0},
-      .top    = Dirichlet<Float>{.val = 1.0},
+      .left   = Neumann(),
+      .right  = Neumann(),
+      .bottom = Neumann(),
+      .top    = Neumann(),
   };
+  const auto ib_dsdn = 0.0;
+
   grid.foreach_i(FOREACH_FUNC {
-    // constexpr Circle<Float> c{.x = 0.125, .y = 0.5, .r = 0.0625};
-    // const auto x = grid.xm(i);
-    // const auto y = grid.ym(j);
-    // s(i, j)      = c.contains(x, y);
-    s(i, j) = 1.0;
+    constexpr Circle<Float> c{.x = 0.125, .y = 0.5, .r = 0.0625};
+    const auto x = grid.xm(i);
+    const auto y = grid.ym(j);
+    s(i, j)      = c.contains(x, y);
+    // s(i, j) = 0.0;
   });
   apply_bconds(grid, s_bconds, s, t);
 
@@ -316,13 +324,13 @@ auto main(int argc, char** argv) -> int {
   writer.add_field("p", p);
   writer.add_field("s", s);
   writer.add_field("div", div);
-  writer.add_field("wall", ib_wall);
+  writer.add_field("psi", ib_levelset);
   if (!writer.write(t)) { return 1; }
 
   Stats p_stats   = stats(grid, p);
   Stats u_stats   = stats(grid, u.x);
   Stats v_stats   = stats(grid, u.y);
-  Stats s_stats   = stats(grid, s);
+  Stats s_stats   = stats(grid, s, ib_free);
   Stats div_stats = stats(grid, div);
   Float div_max   = std::max(std::abs(div_stats.min), std::abs(div_stats.max));
 
@@ -338,7 +346,6 @@ auto main(int argc, char** argv) -> int {
   monitor.add_variable(&div_max, "absmax(div)");
   monitor.write();
 
-  calc_ib_correction_shape(grid, wall, ib_corr_center);
   calc_ib_correction_shape(grid, wall, ib_corr_face);
 
   IGOR_TIME_SCOPE("Solver")
@@ -390,6 +397,7 @@ auto main(int argc, char** argv) -> int {
       correct_velocity(grid, dp, rho, local_dt, u, p);
 
       // 4) Update scalar
+#if 0
       calc_advection_flux(grid, u, s, D, FS);
 #if 1
       update_s(grid, local_dt, FS, s_old, s);
@@ -411,6 +419,13 @@ auto main(int argc, char** argv) -> int {
                                   u);
 #endif
       apply_bconds(grid, s_bconds, s, t);
+#else
+      const auto band_size = 4.0 * 6.0 * std::max(grid.dx(), grid.dy());
+      neumann_extrapolate<false>(grid, s, ib_levelset, ib_dsdn, band_size);
+      calc_advection_flux(grid, u, s, D, FS);
+      update_s(grid, local_dt, FS, s_old, s);
+      apply_bconds(grid, s_bconds, s, t);
+#endif
     }
 
     interpolate(grid, u, ui);
@@ -419,7 +434,7 @@ auto main(int argc, char** argv) -> int {
     p_stats    = stats(grid, p);
     u_stats    = stats(grid, u.x);
     v_stats    = stats(grid, u.y);
-    s_stats    = stats(grid, s);
+    s_stats    = stats(grid, s, ib_free);
     div_stats  = stats(grid, div);
     div_max    = std::max(std::abs(div_stats.min), std::abs(div_stats.max));
 

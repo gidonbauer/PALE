@@ -6,9 +6,9 @@
 #include "Grid.hpp"
 
 // levelset:
-//   - => inside the shape
+//   - => inside the liquid
 //   0 => on the boundary
-//   + => outside of the shape
+//   + => inside the solid
 
 namespace detail {
 
@@ -18,13 +18,13 @@ constexpr auto levelset_width(Float xp, Float xb, Float w) -> Float {
   auto x_max = xb + w;
   if (w < 0.0) { std::swap(x_min, x_max); }
 
-  const auto d_min = x_min - xp;
-  const auto d_max = xp - x_max;
+  const auto d_min = xp - x_min;
+  const auto d_max = x_max - xp;
   if (xp < x_min) { return d_min; }
   if (xp > x_max) { return d_max; }
   IGOR_ASSERT(
-      d_min <= 0.0 && d_max <= 0.0, "Expected d_min={} and d_max={} to be <= 0.", d_min, d_max);
-  return std::max(d_min, d_max);
+      d_min > 0.0 && d_max > 0.0, "Expected d_min={} and d_max={} to be <= 0.", d_min, d_max);
+  return std::min(d_min, d_max);
 }
 
 }  // namespace detail
@@ -45,7 +45,7 @@ struct Circle {
     return levelset({.x = x_, .y = y_});
   }
   [[nodiscard]] constexpr auto levelset(Vec2<Float> p) const noexcept -> Float {
-    return std::sqrt(Igor::sqr(p.x - x) + Igor::sqr(p.y - y)) - r;
+    return r - std::sqrt(Igor::sqr(p.x - x) + Igor::sqr(p.y - y));
   }
 };
 
@@ -89,6 +89,6 @@ struct Rect {
   [[nodiscard]] constexpr auto levelset(Vec2<Float> p) const noexcept -> Float {
     const Float d_x = detail::levelset_width(p.x, x, w);
     const Float d_y = detail::levelset_width(p.y, y, h);
-    return std::max(d_x, d_y);
+    return std::min(d_x, d_y);
   }
 };

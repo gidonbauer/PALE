@@ -353,6 +353,7 @@ For most applications, homogeneous Dirichlet boundary conditions are not the rig
 One usually chooses Neumann boundary conditions
 \begin{equation}
     \nabla s \cdot \vec{n} = v.
+    \label{eq:Neumann-bc}
 \end{equation}
 Here $\vec{n}$ is the outwards pointing normal and $v$ a chosen value.
 
@@ -393,6 +394,97 @@ These kind of boundaries are not easily implemented with the method by Luchini e
     }
     \label{fig:ib-to-left-neumann}
 \end{figure}
+
+\subsection{Neumann Boundary Conditions via Extrapolation}
+
+Aslam developed a method to extrapolate a field using a levelset $\psi$ \cite{aslamPartialDifferentialEquation2004}.
+The interface $\Gamma$ is defined by $\psi = 0$.
+We calculate the normals as
+\begin{equation}
+    \vec{n} = \frac{\nabla \psi}{\|\nabla \psi\|}.
+\end{equation}
+
+Constant extrapolation is achieved by solving the PDE
+\begin{equation}
+    \pd{f}{\tau} + H(\psi) \vec{n} \cdot \nabla f = 0
+    \label{eq:aslam-pde-constant}
+\end{equation}
+over pseudo-time $\tau$.
+Here $H$ is the Heavyside function
+\begin{equation}
+    H(x) = \begin{cases}
+        1 \quad &\text{if } x > 0 \\
+        0 &\text{otherwise}.
+    \end{cases}
+\end{equation}
+
+Eq. \eqref{eq:aslam-pde-constant} has characteristics along $\vec{n}$ and becomes steady when $f$ is constant and $\nabla f = 0$.
+The PDE is a variable coefficient advection equation and can be solved with the same WENO scheme that is used to solve the scalar advection.
+
+\subsubsection{Linear Extrapolation}
+
+To achieve linear extrapolation, we solve the PDE
+\begin{equation}
+    \pd{f_n}{\tau} + H(\psi) \vec{n} \cdot \nabla f_n = 0
+\end{equation}
+with
+\begin{equation}
+    f_n = \vec{n} \cdot \nabla f.
+\end{equation}
+This is the same as Eq. \eqref{eq:aslam-pde-constant} and is solved until steady state is reached \cite{aslamPartialDifferentialEquation2004}.
+Using the constant extrapolation of $f_n$, we solve the following PDE for linear extrapolation \eqref{eq:aslam-pde-constant}:
+\begin{equation}
+    \begin{split}
+        &\pd{f}{\tau} + H(\psi) \left(\vec{n} \cdot \nabla f - f_n\right) = 0 \\
+        \Leftrightarrow\ &\pd{f}{\tau} + H(\psi) \vec{n} \cdot \nabla f = H(\psi) f_n
+    \end{split}
+    \label{eq:aslam-pde-linear}
+\end{equation}
+This equation is the same as Eq. \eqref{eq:aslam-pde-constant} with the addition of a source term.
+It has the same characteristics but the steady state is reached when the gradient of $f$ reaches the prescribed constant value.
+
+If we use this for Neumann type boundary conditions, we already know the value that we want to enforce from Eq. \eqref{eq:Neumann-bc}.
+Therefore we can skip solving for $f_n$ and simply set $f_n = v$ and solve Eq. \eqref{eq:aslam-pde-linear}.
+
+\subsubsection{Quadratic Extrapolation}
+
+Quadratic extrapolation is achieved by solving \cite{aslamPartialDifferentialEquation2004}
+\begin{equation}
+    \pd{f_{nn}}{\tau} + H(\psi) \vec{n} \cdot \nabla f_{nn} = 0
+    \label{eq:aslam-pde-quad-fnn}
+\end{equation}
+with
+\begin{equation}
+    f_{nn}
+    = \vec{n} \cdot \nabla f_n
+    = \vec{n} \cdot \nabla \left(\vec{n} \cdot \nabla f\right),
+\end{equation}
+then
+\begin{equation}
+    \pd{f_{n}}{\tau} + H(\psi) \left(\vec{n} \cdot \nabla f_{n} - f_{nn}\right) = 0,
+    \label{eq:aslam-pde-quad-fn}
+\end{equation}
+and finally
+\begin{equation}
+    \pd{f}{\tau} + H(\psi) \left(\vec{n} \cdot \nabla f - f_{n}\right) = 0.
+\end{equation}
+
+In this case, the prescribed gradient $f_n$ varies itself linearly.
+Solving Eqs. \eqref{eq:aslam-pde-quad-fnn} and \eqref{eq:aslam-pde-quad-fn} is the same as extrapolating $f_n$ linearly as described in the previous section.
+
+In case of Neumann boundary conditions, $f_n$ is again known at the interface.
+The field $f_{nn}$ can be calculated inside the domain and then be extrapolated in a constant manner.
+The gradient that we want to prescribe is then
+\begin{equation}
+    f_n(x, y) = f_n \big\vert_\Gamma + \psi(x, y) f_{nn}(x, y).
+\end{equation}
+This works because $f_{nn}$ is constant along $\vec{n}$.
+
+\subsubsection{Remarks}
+
+\begin{itemize}
+    \item This method is not conservative, although global conservation might be achievable through a correction.
+\end{itemize}
 
 \newpage
 \printbibliography

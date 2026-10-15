@@ -28,7 +28,7 @@ using Float        = double;
 constexpr Float pi = std::numbers::pi_v<Float>;
 
 constexpr Float L  = 2.0 * pi;
-constexpr Circle<Float> c{.x = 0.0, .y = 0.0, .r = 2.0};
+constexpr Ring<Float> c{.x = 0.0, .y = 0.0, .r = 2.0, .w = L};
 
 // =================================================================================================
 namespace Expected {

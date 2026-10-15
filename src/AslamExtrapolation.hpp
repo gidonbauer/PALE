@@ -195,3 +195,43 @@ constexpr void quadratic_extrapolate(const Grid<Float, LAYOUT>& grid,
 
   constant_extrapolate(grid, f, psi, tau_end, n, un);
 }
+
+// =================================================================================================
+template <bool linear = true,
+          typename Float,
+          Layout LAYOUT,
+          IsNoneOr<Vector<Float, LAYOUT>> N_t   = None,
+          IsNoneOr<Scalar<Float, LAYOUT>> SRC_t = None>
+constexpr void neumann_extrapolate(const Grid<Float, LAYOUT>& grid,
+                                   Scalar<Float, LAYOUT> f,
+                                   Scalar<Float, LAYOUT> psi,
+                                   Float dfdn,
+                                   Float tau_end = 0.1,
+                                   N_t n_in      = None{}) {
+  if (linear) {
+    auto fn = grid.alloc_scalar();
+    IGOR_DEFER(grid.free(fn););
+    grid.foreach_i(FOREACH_FUNC { fn(i, j) = psi(i, j) > 0.0 ? dfdn : 0.0; });
+
+    constant_extrapolate(grid, f, psi, tau_end, n_in, fn);
+  } else {
+    auto n = IF_NONE_ELSE(N_t, grid.alloc_vector(), n_in);
+    IGOR_DEFER(if constexpr (IsNone<N_t>) { grid.free(n); });
+    if constexpr (IsNone<N_t>) { normals(grid, psi, n); }
+
+    auto fn  = grid.alloc_scalar();
+    auto fnn = grid.alloc_scalar();
+    IGOR_DEFER(grid.free(fn););
+    IGOR_DEFER(grid.free(fnn););
+
+    // Calculate fnn=n dot grad(n dot grad(f)) in the liquid and extrapolate constant
+    detail::calc_un(grid, n, f, psi, fn);
+    detail::calc_un(grid, n, fn, psi, fnn);
+    constant_extrapolate(grid, fnn, psi, tau_end, n, None{});
+
+    // Calculate fn=dfdn + d*fnn. This works because fnn is constant along the normal
+    grid.foreach_i(
+        FOREACH_FUNC { fn(i, j) = psi(i, j) > 0.0 ? dfdn + fnn(i, j) * psi(i, j) : 0.0; });
+    constant_extrapolate(grid, f, psi, tau_end, n, fn);
+  }
+}
