@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Igor/Defer.hpp>
 #include <Igor/Math.hpp>
 
 #include "Grid.hpp"
@@ -93,8 +94,10 @@ constexpr void calc_advection_flux(const Grid<Float, LAYOUT>& grid,
                                    const W_t& w,
                                    Float D,
                                    FaceVector<Float, LAYOUT> F) {
-  static auto sL = grid.alloc_face_vector();
-  static auto sR = grid.alloc_face_vector();
+  auto sL = grid.alloc_face_vector();
+  auto sR = grid.alloc_face_vector();
+  IGOR_DEFER(grid.free(sL););
+  IGOR_DEFER(grid.free(sR););
   weno_reconstruction(grid, s, sL, sR);
   dispatch_metric(
       grid,
