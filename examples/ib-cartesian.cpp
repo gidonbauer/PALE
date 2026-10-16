@@ -7,6 +7,7 @@
 #include <Igor/Math.hpp>
 #include <Igor/Timer.hpp>
 
+#define PALE_ASLAM_WENO
 #include "Advection-Diffusion.hpp"
 #include "AslamExtrapolation.hpp"
 #include "BoundaryConditions.hpp"
@@ -365,7 +366,7 @@ auto main(int argc, char** argv) -> int {
 
       // 1) Predictor
       calc_mom_flux(grid, u, p, rho, mu, FUX, FUY, FVX, FVY);
-#if 1
+#if 0
       update_u(grid, local_dt, FUX, FUY, FVX, FVY, u_old, u);
       correct_velocity_ib_implicit_euler(grid, ib_corr_face, rho, mu, local_dt, u);
 #else
@@ -397,35 +398,11 @@ auto main(int argc, char** argv) -> int {
       correct_velocity(grid, dp, rho, local_dt, u, p);
 
       // 4) Update scalar
-#if 0
-      calc_advection_flux(grid, u, s, D, FS);
-#if 1
-      update_s(grid, local_dt, FS, s_old, s);
-      correct_scalar_ib_implicit_euler(grid, ib_corr_center, D, local_dt, s);
-#else
-      update_s_ib_semi_analytical(grid,
-                                  local_dt,
-                                  None{},
-                                  None{},
-                                  FUX,
-                                  FUY,
-                                  FVX,
-                                  FVY,
-                                  None{},
-                                  mu,
-                                  rho,
-                                  ib_corr_center,
-                                  u_old,
-                                  u);
-#endif
-      apply_bconds(grid, s_bconds, s, t);
-#else
       const auto band_size = 4.0 * 6.0 * std::max(grid.dx(), grid.dy());
       neumann_extrapolate<2>(grid, s, ib_levelset, ib_dsdn, band_size);
       calc_advection_flux(grid, u, s, D, FS);
       update_s(grid, local_dt, FS, s_old, s);
       apply_bconds(grid, s_bconds, s, t);
-#endif
     }
 
     interpolate(grid, u, ui);

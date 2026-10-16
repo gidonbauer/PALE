@@ -55,63 +55,63 @@ constexpr std::array ns = {16, 32, 64, 128, 256, 512, 1024};
 #ifdef PALE_ASLAM_WENO
 constexpr Float factor = 1.0;
 #else
-constexpr Float factor = 1.5;
+constexpr Float factor = 1.3;
 #endif
 #if POLAR_COORDINATES
 constexpr std::array L1s_bc = {
-    factor * 4.109328288578e-02,
-    factor * 1.189049143403e-02,
-    factor * 6.366151445679e-03,
-    factor * 3.012302358304e-03,
-    factor * 1.751695064404e-03,
-    factor * 7.439793972791e-04,
-    factor * 3.699942888292e-04,
+    factor * 4.109445114904e-02,
+    factor * 1.189046212412e-02,
+    factor * 6.366155488106e-03,
+    factor * 3.012302252171e-03,
+    factor * 1.751695037359e-03,
+    factor * 7.439793913444e-04,
+    factor * 3.699942822643e-04,
 };
 constexpr std::array L1s_bl = {
-    factor * 4.295877247058e-02,
-    factor * 1.170534060792e-02,
-    factor * 2.359647897424e-03,
-    factor * 6.034260650062e-04,
-    factor * 1.559631055488e-04,
-    factor * 3.569619327578e-05,
-    factor * 8.672024073642e-06,
+    factor * 4.295857313008e-02,
+    factor * 1.170534120366e-02,
+    factor * 2.359647583438e-03,
+    factor * 6.034260609583e-04,
+    factor * 1.559631166528e-04,
+    factor * 3.569619095159e-05,
+    factor * 8.672024898810e-06,
 };
 constexpr std::array L1s_bq = {
-    factor * 3.536573030605e-02,
-    factor * 8.913399667433e-03,
-    factor * 1.459113366381e-03,
-    factor * 1.686917123117e-04,
-    factor * 2.165809697164e-05,
-    factor * 2.568809465554e-06,
-    factor * 3.220559315540e-07,
+    factor * 3.535998107243e-02,
+    factor * 8.913360962453e-03,
+    factor * 1.459113048056e-03,
+    factor * 1.686917214136e-04,
+    factor * 2.165810812630e-05,
+    factor * 2.568806935677e-06,
+    factor * 3.220573091503e-07,
 };
 #else
 constexpr std::array L1s_bc = {
-    factor * 6.914268734335e-02,
-    factor * 2.140080310971e-02,
-    factor * 1.690965969347e-02,
-    factor * 7.511566069029e-03,
-    factor * 4.157310833304e-03,
-    factor * 2.059576246615e-03,
-    factor * 1.000232171813e-03,
+    factor * 7.179318925943e-02,
+    factor * 2.164714938758e-02,
+    factor * 1.691828843162e-02,
+    factor * 7.511870901688e-03,
+    factor * 4.157243944131e-03,
+    factor * 2.059499996582e-03,
+    factor * 1.000190722218e-03,
 };
 constexpr std::array L1s_bl = {
-    factor * 9.562740664038e-02,
-    factor * 1.948384562686e-02,
-    factor * 6.083316141843e-03,
-    factor * 1.244389453128e-03,
-    factor * 3.468374659071e-04,
-    factor * 8.197649317376e-05,
-    factor * 1.960065225332e-05,
+    factor * 8.886804158077e-02,
+    factor * 1.920951442053e-02,
+    factor * 6.077255039370e-03,
+    factor * 1.244388907551e-03,
+    factor * 3.461840040656e-04,
+    factor * 8.199221150557e-05,
+    factor * 1.954571876051e-05,
 };
 constexpr std::array L1s_bq = {
-    factor * 2.579999523437e-01,
-    factor * 4.710281397358e-02,
-    factor * 6.282780176066e-03,
-    factor * 7.017925998244e-04,
-    factor * 8.724374782096e-05,
-    factor * 1.110287230971e-05,
-    factor * 1.368174702030e-06,
+    factor * 2.718003629114e-01,
+    factor * 4.198600467317e-02,
+    factor * 6.281530379979e-03,
+    factor * 7.014206644087e-04,
+    factor * 8.734944665125e-05,
+    factor * 1.109675737865e-05,
+    factor * 1.439671485376e-06,
 };
 #endif  // POLAR_COORDINATES
 

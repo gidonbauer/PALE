@@ -221,11 +221,13 @@ constexpr void constant_extrapolate(const Grid<Float, LAYOUT>& grid,
 
   // Solve PDE
   // du/dtau + H(psi) n * grad(f) = 0
+
 #ifdef PALE_ASLAM_WENO
-  constexpr Float CFL = 0.5;
-#else
-  constexpr Float CFL = 0.7;
-#endif
+  constexpr Float CFL = 0.9;
+#else   // MinMod
+  constexpr Float CFL = 0.4;
+#endif  // PALE_ASLAM_WENO
+
   // Max. velocity is 1
   const Float dtau = CFL * [&] {
     switch (grid.coords()) {
@@ -245,26 +247,34 @@ constexpr void constant_extrapolate(const Grid<Float, LAYOUT>& grid,
 #else
   auto dfdt = grid.alloc_scalar();
   IGOR_DEFER(grid.free(dfdt););
-#endif                                                   // PALE_ASLAM_WENO
+#endif  // PALE_ASLAM_WENO
+
+  // Forward Euler step g <- g + dtau * L(g)
+  const auto euler_step = [&](Scalar<Float, LAYOUT> g) {
+#ifdef PALE_ASLAM_WENO
+    weno_reconstruction(grid, g, fL, fR);
+    detail::aslam_advection_do_step_weno(grid, dtau, g, u, fL, fR, src, g);
+#else
+    detail::aslam_advection_do_step_minmod(grid, dtau, g, u, src, dfdt, g);
+#endif
+    apply_neumann_bconds(grid, g);
+  };
+
   for (double tau = 0.0; tau <= tau_end; tau += dtau) {  // NOLINT
     copy(f, f_old);
 
-    // = First step =====
-#ifdef PALE_ASLAM_WENO
-    weno_reconstruction(grid, f, fL, fR);
-    detail::aslam_advection_do_step_weno(grid, 0.5 * dtau, f_old, u, fL, fR, src, f);
-#else
-    detail::aslam_advection_do_step_minmod(grid, 0.5 * dtau, f_old, u, src, dfdt, f);
-#endif
+    // = SSP-RK3 (Shu & Osher, 1988) =============
+    // = First stage ====
+    euler_step(f);
+
+    // = Second stage ===
+    euler_step(f);
+    grid.foreach_i(FOREACH_FUNC { f(i, j) = 0.75 * f_old(i, j) + 0.25 * f(i, j); });
     apply_neumann_bconds(grid, f);
 
-    // = Second step ====
-#ifdef PALE_ASLAM_WENO
-    weno_reconstruction(grid, f, fL, fR);
-    detail::aslam_advection_do_step_weno(grid, dtau, f_old, u, fL, fR, src, f);
-#else
-    detail::aslam_advection_do_step_minmod(grid, dtau, f_old, u, src, dfdt, f);
-#endif
+    // = Third stage ====
+    euler_step(f);
+    grid.foreach_i(FOREACH_FUNC { f(i, j) = f_old(i, j) / 3.0 + 2.0 / 3.0 * f(i, j); });
     apply_neumann_bconds(grid, f);
   }
 }
