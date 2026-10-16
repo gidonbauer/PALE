@@ -35,7 +35,7 @@ constexpr Float D        = 1e-3;
 
 constexpr Float CFL      = 0.7;
 constexpr Float tend     = 0.6;
-constexpr Float dt_write = 0.001;
+constexpr Float dt_write = tend / 100.0;
 
 constexpr Circle<Float> wall{.x = 0.5, .y = 0.5, .r = 0.125};
 
@@ -398,8 +398,8 @@ auto main(int argc, char** argv) -> int {
       correct_velocity(grid, dp, rho, local_dt, u, p);
 
       // 4) Update scalar
-      const auto band_size = 4.0 * 6.0 * std::max(grid.dx(), grid.dy());
-      neumann_extrapolate<2>(grid, s, ib_levelset, ib_dsdn, band_size);
+      const auto band_width = 3.0;
+      neumann_extrapolate<1>(grid, s, ib_levelset, ib_dsdn, band_width);
       calc_advection_flux(grid, u, s, D, FS);
       update_s(grid, local_dt, FS, s_old, s);
       apply_bconds(grid, s_bconds, s, t);

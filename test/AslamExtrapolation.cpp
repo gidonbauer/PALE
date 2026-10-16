@@ -267,21 +267,18 @@ auto main(int argc, char** argv) -> int {
   writer.write(0.0);
 
   // Band size and tau are physical lengths, use the largest physical cell size
+  constexpr auto band_width = 3.0;
 #if POLAR_COORDINATES
-  const double band_size = 6.0 * std::max(grid.r_max() * grid.dtheta(), grid.dr());
+  const double band_size = band_width * std::max(grid.r_max() * grid.dtheta(), grid.dr());
 #else
-  const double band_size = 6.0 * std::max(grid.dx(), grid.dy());
+  const double band_size = band_width * std::max(grid.dx(), grid.dy());
 #endif  // POLAR_COORDINATES
-#if 0
-  const double tau_end = 2.5;
-#else
-  const double tau_end = 4.0 * band_size;
-#endif
+
   IGOR_TIME_SCOPE("Extrapolation") {
     switch (EXTRAPOLATION_ORDER) {
-      case 0:  constant_extrapolate(grid, u, psi, tau_end); break;
-      case 1:  linear_extrapolate(grid, u, psi, tau_end); break;
-      case 2:  quadratic_extrapolate(grid, u, psi, tau_end); break;
+      case 0:  constant_extrapolate(grid, u, psi, band_width); break;
+      case 1:  linear_extrapolate(grid, u, psi, band_width); break;
+      case 2:  quadratic_extrapolate(grid, u, psi, band_width); break;
       default: Igor::Panic("Invalid order `{}`", EXTRAPOLATION_ORDER);
     }
   }

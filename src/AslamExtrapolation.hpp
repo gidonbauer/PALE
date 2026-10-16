@@ -29,6 +29,16 @@ normals(const Grid<Float, LAYOUT>& grid, const Scalar<Float, LAYOUT> psi, Vector
 
 namespace detail {
 
+template <typename Float, Layout LAYOUT>
+constexpr auto calc_tau_end(const Grid<Float, LAYOUT>& grid, Float band_width) -> Float {
+  const auto factor = 4.0 * band_width;
+  switch (grid.coords()) {
+    case Coordinates::CARTESIAN:           return factor * std::max(grid.dx(), grid.dy());
+    case Coordinates::SYMMETRIC_SPHERICAL:
+    case Coordinates::POLAR: return factor * std::max(grid.r_max() * grid.dtheta(), grid.dr());
+  }
+}
+
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
 constexpr void advection_velocity(const Grid<Float, LAYOUT>& grid,
@@ -208,9 +218,9 @@ template <typename Float,
 constexpr void constant_extrapolate(const Grid<Float, LAYOUT>& grid,
                                     Scalar<Float, LAYOUT> f,
                                     Scalar<Float, LAYOUT> psi,
-                                    Float tau_end = 0.1,
-                                    N_t n_in      = None{},
-                                    SRC_t src     = None{}) {
+                                    Float band_width,
+                                    N_t n_in  = None{},
+                                    SRC_t src = None{}) {
   auto n = IF_NONE_ELSE(N_t, grid.alloc_vector(), n_in);
   IGOR_DEFER(if constexpr (IsNone<N_t>) { grid.free(n); });
   if constexpr (IsNone<N_t>) { normals(grid, psi, n); }
@@ -260,6 +270,7 @@ constexpr void constant_extrapolate(const Grid<Float, LAYOUT>& grid,
     apply_neumann_bconds(grid, g);
   };
 
+  const auto tau_end = detail::calc_tau_end(grid, band_width);
   for (double tau = 0.0; tau <= tau_end; tau += dtau) {  // NOLINT
     copy(f, f_old);
 
@@ -284,8 +295,8 @@ template <typename Float, Layout LAYOUT, IsNoneOr<Vector<Float, LAYOUT>> N_t = N
 constexpr void linear_extrapolate(const Grid<Float, LAYOUT>& grid,
                                   Scalar<Float, LAYOUT> f,
                                   Scalar<Float, LAYOUT> psi,
-                                  Float tau_end = 0.1,
-                                  N_t n_in      = None{}) {
+                                  Float band_width,
+                                  N_t n_in = None{}) {
   auto n = IF_NONE_ELSE(N_t, grid.alloc_vector(), n_in);
   IGOR_DEFER(if constexpr (IsNone<N_t>) { grid.free(n); });
   if constexpr (IsNone<N_t>) { normals(grid, psi, n); }
@@ -295,10 +306,10 @@ constexpr void linear_extrapolate(const Grid<Float, LAYOUT>& grid,
   IGOR_DEFER(grid.free(un););
   detail::calc_un(grid, n, f, psi, un);
 
-  constant_extrapolate(grid, un, psi, tau_end, n, None{});
+  constant_extrapolate(grid, un, psi, band_width, n, None{});
   grid.foreach_i(FOREACH_FUNC { un(i, j) = psi(i, j) > 0.0 ? un(i, j) : 0.0; });
 
-  constant_extrapolate(grid, f, psi, tau_end, n, un);
+  constant_extrapolate(grid, f, psi, band_width, n, un);
 }
 
 // =================================================================================================
@@ -306,8 +317,8 @@ template <typename Float, Layout LAYOUT, IsNoneOr<Vector<Float, LAYOUT>> N_t = N
 constexpr void quadratic_extrapolate(const Grid<Float, LAYOUT>& grid,
                                      Scalar<Float, LAYOUT> f,
                                      Scalar<Float, LAYOUT> psi,
-                                     Float tau_end = 0.1,
-                                     N_t n_in      = None{}) {
+                                     Float band_width,
+                                     N_t n_in = None{}) {
   auto n = IF_NONE_ELSE(N_t, grid.alloc_vector(), n_in);
   IGOR_DEFER(if constexpr (IsNone<N_t>) { grid.free(n); });
   if constexpr (IsNone<N_t>) { normals(grid, psi, n); }
@@ -317,10 +328,10 @@ constexpr void quadratic_extrapolate(const Grid<Float, LAYOUT>& grid,
   IGOR_DEFER(grid.free(un););
   detail::calc_un(grid, n, f, psi, un);
 
-  linear_extrapolate(grid, un, psi, tau_end, n);
+  linear_extrapolate(grid, un, psi, band_width, n);
   grid.foreach_i(FOREACH_FUNC { un(i, j) = psi(i, j) > 0.0 ? un(i, j) : 0.0; });
 
-  constant_extrapolate(grid, f, psi, tau_end, n, un);
+  constant_extrapolate(grid, f, psi, band_width, n, un);
 }
 
 // =================================================================================================
@@ -333,16 +344,17 @@ constexpr void neumann_extrapolate(const Grid<Float, LAYOUT>& grid,
                                    Scalar<Float, LAYOUT> f,
                                    Scalar<Float, LAYOUT> psi,
                                    Float dfdn,
-                                   Float tau_end = 0.1,
-                                   N_t n_in      = None{}) {
+                                   Float band_width,
+                                   N_t n_in = None{}) {
   static_assert(ORDER == 1 || ORDER == 2,
                 "ORDER can be 1 for linear or 2 for quadratic extrapolation.");
+
   if (ORDER == 1) {
     auto fn = grid.alloc_scalar();
     IGOR_DEFER(grid.free(fn););
     grid.foreach_i(FOREACH_FUNC { fn(i, j) = psi(i, j) > 0.0 ? dfdn : 0.0; });
 
-    constant_extrapolate(grid, f, psi, tau_end, n_in, fn);
+    constant_extrapolate(grid, f, psi, band_width, n_in, fn);
   } else {
     auto n = IF_NONE_ELSE(N_t, grid.alloc_vector(), n_in);
     IGOR_DEFER(if constexpr (IsNone<N_t>) { grid.free(n); });
@@ -356,11 +368,11 @@ constexpr void neumann_extrapolate(const Grid<Float, LAYOUT>& grid,
     // Calculate fnn=n dot grad(n dot grad(f)) in the liquid and extrapolate constant
     detail::calc_un(grid, n, f, psi, fn);
     detail::calc_un(grid, n, fn, psi, fnn);
-    constant_extrapolate(grid, fnn, psi, tau_end, n, None{});
+    constant_extrapolate(grid, fnn, psi, band_width, n, None{});
 
     // Calculate fn=dfdn + d*fnn. This works because fnn is constant along the normal
     grid.foreach_i(
         FOREACH_FUNC { fn(i, j) = psi(i, j) > 0.0 ? dfdn + fnn(i, j) * psi(i, j) : 0.0; });
-    constant_extrapolate(grid, f, psi, tau_end, n, fn);
+    constant_extrapolate(grid, f, psi, band_width, n, fn);
   }
 }
