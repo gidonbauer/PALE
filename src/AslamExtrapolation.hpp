@@ -12,14 +12,19 @@
 template <typename Float, Layout LAYOUT>
 constexpr void
 normals(const Grid<Float, LAYOUT>& grid, const Scalar<Float, LAYOUT> psi, Vector<Float, LAYOUT> n) {
-  grid.foreach_i(FOREACH_FUNC {
-    const auto grad_psi = normalize(Vec2<Float>{
-        .x = (psi(i + 1, j) - psi(i - 1, j)) / (2.0 * grid.dx()),
-        .y = (psi(i, j + 1) - psi(i, j - 1)) / (2.0 * grid.dy()),
-    });
-    n.x(i, j)           = grad_psi.x;
-    n.y(i, j)           = grad_psi.y;
-  });
+  dispatch_metric(
+      grid, DISPATCH_FUNC {
+        grid.foreach_i(FOREACH_FUNC {
+          const auto x        = grid.xm(i);
+          const auto y        = grid.ym(j);
+          const auto grad_psi = normalize(Vec2<Float>{
+              .x = (psi(i + 1, j) - psi(i - 1, j)) / (2.0 * grid.dx() * Metric::h1(x, y)),
+              .y = (psi(i, j + 1) - psi(i, j - 1)) / (2.0 * grid.dy() * Metric::h2(x, y)),
+          });
+          n.x(i, j)           = grad_psi.x;
+          n.y(i, j)           = grad_psi.y;
+        });
+      });
 }
 
 namespace detail {
@@ -47,16 +52,22 @@ constexpr void aslam_advection_do_step_weno(const Grid<Float, LAYOUT>& grid,
                                             const FaceVector<Float, LAYOUT> fR,
                                             const SRC_t src,
                                             Scalar<Float, LAYOUT> f) {
-  grid.foreach_i(FOREACH_FUNC {
-    const double f_minus = u.x(i, j) >= 0.0 ? fL.x(i, j) : fR.x(i, j);
-    const double f_plus  = u.x(i, j) >= 0.0 ? fL.x(i + 1, j) : fR.x(i + 1, j);
-    const double g_minus = u.y(i, j) >= 0.0 ? fL.y(i, j) : fR.y(i, j);
-    const double g_plus  = u.y(i, j) >= 0.0 ? fL.y(i, j + 1) : fR.y(i, j + 1);
+  dispatch_metric(
+      grid, DISPATCH_FUNC {
+        grid.foreach_i(FOREACH_FUNC {
+          const double f_minus = u.x(i, j) >= 0.0 ? fL.x(i, j) : fR.x(i, j);
+          const double f_plus  = u.x(i, j) >= 0.0 ? fL.x(i + 1, j) : fR.x(i + 1, j);
+          const double g_minus = u.y(i, j) >= 0.0 ? fL.y(i, j) : fR.y(i, j);
+          const double g_plus  = u.y(i, j) >= 0.0 ? fL.y(i, j + 1) : fR.y(i, j + 1);
 
-    f(i, j)              = f_old(i, j) - dt * (u.x(i, j) * (f_plus - f_minus) / grid.dx() +
-                                               u.y(i, j) * (g_plus - g_minus) / grid.dy());
-    if constexpr (!IsNone<SRC_t>) { f(i, j) += dt * src(i, j); }
-  });
+          const auto x         = grid.xm(i);
+          const auto y         = grid.ym(j);
+          f(i, j) =
+              f_old(i, j) - dt * (u.x(i, j) * (f_plus - f_minus) / (grid.dx() * Metric::h1(x, y)) +
+                                  u.y(i, j) * (g_plus - g_minus) / (grid.dy() * Metric::h2(x, y)));
+          if constexpr (!IsNone<SRC_t>) { f(i, j) += dt * src(i, j); }
+        });
+      });
 }
 
 // =================================================================================================
@@ -73,48 +84,57 @@ constexpr void aslam_advection_do_step_minmod(const Grid<Float, LAYOUT>& grid,
     return std::abs(a) < std::abs(b) ? a : b;
   };
 
-  grid.foreach_i(FOREACH_FUNC {
-    dfdt(i, j) = 0.0;
-    // x-direction
-    {
-      // first differences
-      const auto Dm = (f(i, j) - f(i - 1, j)) / grid.dx();  // backward
-      const auto Dp = (f(i + 1, j) - f(i, j)) / grid.dx();  // forward
+  dispatch_metric(
+      grid, DISPATCH_FUNC {
+        grid.foreach_i(FOREACH_FUNC {
+          const auto x = grid.xm(i);
+          const auto y = grid.ym(j);
+          // physical cell size
+          const auto hx = grid.dx() * Metric::h1(x, y);
+          const auto hy = grid.dy() * Metric::h2(x, y);
 
-      // second differences (undivided) for the limiter
-      const auto c_m = f(i, j) - 2.0 * f(i - 1, j) + f(i - 2, j);  // curvature left of i
-      const auto c_c = f(i + 1, j) - 2.0 * f(i, j) + f(i - 1, j);  // curvature at i
-      const auto c_p = f(i + 2, j) - 2.0 * f(i + 1, j) + f(i, j);  // curvature right of i
+          dfdt(i, j)    = 0.0;
+          // x-direction
+          {
+            // first differences
+            const auto Dm = (f(i, j) - f(i - 1, j)) / hx;  // backward
+            const auto Dp = (f(i + 1, j) - f(i, j)) / hx;  // forward
 
-      // one-sided 2nd-order derivatives with MinMod curvature correction
-      const auto fx_minus  = Dm + 0.5 * aslam_minmod(c_m, c_c) / grid.dx();
-      const auto fx_plus   = Dp - 0.5 * aslam_minmod(c_c, c_p) / grid.dx();
+            // second differences (undivided) for the limiter
+            const auto c_m = f(i, j) - 2.0 * f(i - 1, j) + f(i - 2, j);  // curvature left of i
+            const auto c_c = f(i + 1, j) - 2.0 * f(i, j) + f(i - 1, j);  // curvature at i
+            const auto c_p = f(i + 2, j) - 2.0 * f(i + 1, j) + f(i, j);  // curvature right of i
 
-      const auto fx        = u.x(i, j) >= 0.0 ? fx_minus : fx_plus;
-      dfdt(i, j)          -= u.x(i, j) * fx;
-    }
+            // one-sided 2nd-order derivatives with MinMod curvature correction
+            const auto fx_minus  = Dm + 0.5 * aslam_minmod(c_m, c_c) / hx;
+            const auto fx_plus   = Dp - 0.5 * aslam_minmod(c_c, c_p) / hx;
 
-    // y-direction
-    {
-      // first differences
-      const auto Dm = (f(i, j) - f(i, j - 1)) / grid.dy();  // backward
-      const auto Dp = (f(i, j + 1) - f(i, j)) / grid.dy();  // forward
+            const auto fx        = u.x(i, j) >= 0.0 ? fx_minus : fx_plus;
+            dfdt(i, j)          -= u.x(i, j) * fx;
+          }
 
-      // second differences (undivided) for the limiter
-      const auto c_m = f(i, j) - 2.0 * f(i, j - 1) + f(i, j - 2);  // curvature left of i
-      const auto c_c = f(i, j + 1) - 2.0 * f(i, j) + f(i, j - 1);  // curvature at i
-      const auto c_p = f(i, j + 2) - 2.0 * f(i, j + 1) + f(i, j);  // curvature right of i
+          // y-direction
+          {
+            // first differences
+            const auto Dm = (f(i, j) - f(i, j - 1)) / hy;  // backward
+            const auto Dp = (f(i, j + 1) - f(i, j)) / hy;  // forward
 
-      // one-sided 2nd-order derivatives with MinMod curvature correction
-      const auto fy_minus  = Dm + 0.5 * aslam_minmod(c_m, c_c) / grid.dy();
-      const auto fy_plus   = Dp - 0.5 * aslam_minmod(c_c, c_p) / grid.dy();
+            // second differences (undivided) for the limiter
+            const auto c_m = f(i, j) - 2.0 * f(i, j - 1) + f(i, j - 2);  // curvature left of i
+            const auto c_c = f(i, j + 1) - 2.0 * f(i, j) + f(i, j - 1);  // curvature at i
+            const auto c_p = f(i, j + 2) - 2.0 * f(i, j + 1) + f(i, j);  // curvature right of i
 
-      const auto fy        = u.y(i, j) >= 0.0 ? fy_minus : fy_plus;
-      dfdt(i, j)          -= u.y(i, j) * fy;
-    }
+            // one-sided 2nd-order derivatives with MinMod curvature correction
+            const auto fy_minus  = Dm + 0.5 * aslam_minmod(c_m, c_c) / hy;
+            const auto fy_plus   = Dp - 0.5 * aslam_minmod(c_c, c_p) / hy;
 
-    if constexpr (!IsNone<SRC_t>) { dfdt(i, j) += src(i, j); }
-  });
+            const auto fy        = u.y(i, j) >= 0.0 ? fy_minus : fy_plus;
+            dfdt(i, j)          -= u.y(i, j) * fy;
+          }
+
+          if constexpr (!IsNone<SRC_t>) { dfdt(i, j) += src(i, j); }
+        });
+      });
 
   grid.foreach_i(FOREACH_FUNC { f(i, j) = f_old(i, j) + dt * dfdt(i, j); });
 }
@@ -126,48 +146,56 @@ constexpr void calc_un(const Grid<Float, LAYOUT>& grid,
                        const Scalar<Float, LAYOUT> u,
                        const Scalar<Float, LAYOUT> psi,
                        Scalar<Float, LAYOUT> un) {
-  grid.foreach_i(FOREACH_FUNC {
-    un(i, j) = 0.0;
-    if (psi(i, j) <= 0.0) {
-      // x-direction
-      {
-        if (psi(i + 1, j) <= 0.0 && psi(i - 1, j) <= 0.0) {
-          // Central: -1/2 0 1/2
-          un(i, j) += n.x(i, j) * (u(i + 1, j) - u(i - 1, j)) / (2.0 * grid.dx());
-        } else if (psi(i + 1, j) <= 0.0 && psi(i + 2, j) <= 0.0) {
-          // Forwards: −3/2 4/2 −1/2
-          un(i, j) +=
-              n.x(i, j) * (-3.0 * u(i, j) + 4.0 * u(i + 1, j) - u(i + 2, j)) / (2.0 * grid.dx());
-        } else if (psi(i - 2, j) <= 0.0 && psi(i - 1, j) <= 0.0) {
-          // Backwards: 1/2 −4/2 3/2
-          un(i, j) +=
-              n.x(i, j) * (u(i - 2, j) - 4.0 * u(i - 1, j) + 3.0 * u(i, j)) / (2.0 * grid.dx());
-        } else {
-          Igor::Panic(
-              "Neither central, forwards, or backwards finite differences are possible, what now?");
-        }
-      }
+  dispatch_metric(
+      grid, DISPATCH_FUNC {
+        grid.foreach_i(FOREACH_FUNC {
+          un(i, j) = 0.0;
+          if (psi(i, j) <= 0.0) {
+            const auto x = grid.xm(i);
+            const auto y = grid.ym(j);
 
-      // y-direction
-      {
-        if (psi(i, j + 1) <= 0.0 && psi(i, j - 1) <= 0.0) {
-          // Central: -1/2 0 1/2
-          un(i, j) += n.y(i, j) * (u(i, j + 1) - u(i, j - 1)) / (2.0 * grid.dy());
-        } else if (psi(i, j + 1) <= 0.0 && psi(i, j + 2) <= 0.0) {
-          // Forwards: −3/2 4/2 −1/2
-          un(i, j) +=
-              n.y(i, j) * (-3.0 * u(i, j) + 4.0 * u(i, j + 1) - u(i, j + 2)) / (2.0 * grid.dy());
-        } else if (psi(i, j - 2) <= 0.0 && psi(i, j - 1) <= 0.0) {
-          // Backwards: 1/2 −4/2 3/2
-          un(i, j) +=
-              n.y(i, j) * (u(i, j - 2) - 4.0 * u(i, j - 1) + 3.0 * u(i, j)) / (2.0 * grid.dy());
-        } else {
-          Igor::Panic(
-              "Neither central, forwards, or backwards finite differences are possible, what now?");
-        }
-      }
-    }
-  });
+            // x-direction
+            {
+              if (psi(i + 1, j) <= 0.0 && psi(i - 1, j) <= 0.0) {
+                // Central: -1/2 0 1/2
+                un(i, j) +=
+                    n.x(i, j) * (u(i + 1, j) - u(i - 1, j)) / (2.0 * grid.dx() * Metric::h1(x, y));
+              } else if (psi(i + 1, j) <= 0.0 && psi(i + 2, j) <= 0.0) {
+                // Forwards: −3/2 4/2 −1/2
+                un(i, j) += n.x(i, j) * (-3.0 * u(i, j) + 4.0 * u(i + 1, j) - u(i + 2, j)) /
+                            (2.0 * grid.dx() * Metric::h1(x, y));
+              } else if (psi(i - 2, j) <= 0.0 && psi(i - 1, j) <= 0.0) {
+                // Backwards: 1/2 −4/2 3/2
+                un(i, j) += n.x(i, j) * (u(i - 2, j) - 4.0 * u(i - 1, j) + 3.0 * u(i, j)) /
+                            (2.0 * grid.dx() * Metric::h1(x, y));
+              } else {
+                Igor::Panic("Neither central, forwards, or backwards finite differences are "
+                            "possible, what now?");
+              }
+            }
+
+            // y-direction
+            {
+              if (psi(i, j + 1) <= 0.0 && psi(i, j - 1) <= 0.0) {
+                // Central: -1/2 0 1/2
+                un(i, j) +=
+                    n.y(i, j) * (u(i, j + 1) - u(i, j - 1)) / (2.0 * grid.dy() * Metric::h2(x, y));
+              } else if (psi(i, j + 1) <= 0.0 && psi(i, j + 2) <= 0.0) {
+                // Forwards: −3/2 4/2 −1/2
+                un(i, j) += n.y(i, j) * (-3.0 * u(i, j) + 4.0 * u(i, j + 1) - u(i, j + 2)) /
+                            (2.0 * grid.dy() * Metric::h2(x, y));
+              } else if (psi(i, j - 2) <= 0.0 && psi(i, j - 1) <= 0.0) {
+                // Backwards: 1/2 −4/2 3/2
+                un(i, j) += n.y(i, j) * (u(i, j - 2) - 4.0 * u(i, j - 1) + 3.0 * u(i, j)) /
+                            (2.0 * grid.dy() * Metric::h2(x, y));
+              } else {
+                Igor::Panic("Neither central, forwards, or backwards finite differences are "
+                            "possible, what now?");
+              }
+            }
+          }
+        });
+      });
 }
 
 }  // namespace detail
@@ -193,10 +221,21 @@ constexpr void constant_extrapolate(const Grid<Float, LAYOUT>& grid,
 
   // Solve PDE
   // du/dtau + H(psi) n * grad(f) = 0
-  constexpr Float CFL = 0.25;
-  const Float dtau    = CFL * std::min(grid.dx(), grid.dy());  // Max. velocity is 1
+#ifdef PALE_ASLAM_WENO
+  constexpr Float CFL = 0.5;
+#else
+  constexpr Float CFL = 0.7;
+#endif
+  // Max. velocity is 1
+  const Float dtau = CFL * [&] {
+    switch (grid.coords()) {
+      case Coordinates::CARTESIAN:           return std::min(grid.dx(), grid.dy());
+      case Coordinates::SYMMETRIC_SPHERICAL:
+      case Coordinates::POLAR:               return std::min(grid.rm(0) * grid.dtheta(), grid.dr());
+    }
+  }();
 
-  auto f_old          = grid.alloc_scalar();
+  auto f_old = grid.alloc_scalar();
   IGOR_DEFER(grid.free(f_old););
 #ifdef PALE_ASLAM_WENO
   auto fL = grid.alloc_face_vector();
@@ -213,14 +252,11 @@ constexpr void constant_extrapolate(const Grid<Float, LAYOUT>& grid,
     // = First step =====
 #ifdef PALE_ASLAM_WENO
     weno_reconstruction(grid, f, fL, fR);
-    detail::aslam_advection_do_step_weno(grid, dtau, f_old, u, fL, fR, src, f);
+    detail::aslam_advection_do_step_weno(grid, 0.5 * dtau, f_old, u, fL, fR, src, f);
 #else
-    detail::aslam_advection_do_step_minmod(grid, dtau, f_old, u, src, dfdt, f);
+    detail::aslam_advection_do_step_minmod(grid, 0.5 * dtau, f_old, u, src, dfdt, f);
 #endif
     apply_neumann_bconds(grid, f);
-
-    // For Heun's method
-    grid.foreach_i(FOREACH_FUNC { f(i, j) = 0.5 * (f_old(i, j) + f(i, j)); });
 
     // = Second step ====
 #ifdef PALE_ASLAM_WENO

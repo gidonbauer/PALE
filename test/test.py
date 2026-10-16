@@ -70,9 +70,12 @@ ALL_TESTS = [
     TestCase("IB-Polar-Channel-SA",         [8, 16, 32, 64],                                False),
     TestCase("Iterator",                    None,                                           True),
     TestCase("Boundary",                    None,                                           False),
-    TestCase("Aslam-Constant",              [16, 32, 64, 128],                              False),
-    TestCase("Aslam-Linear",                [16, 32, 64, 128],                              False),
-    TestCase("Aslam-Quadratic",             [16, 32, 64, 128],                              False),
+    TestCase("Aslam-Constant",              [16, 32, 64, 96, 128],                          False),
+    TestCase("Aslam-Linear",                [16, 32, 64, 96, 128],                          False),
+    TestCase("Aslam-Quadratic",             [16, 32, 64, 96, 128],                          False),
+    TestCase("Aslam-Polar-Constant",        [16, 32, 64, 96, 128],                          False),
+    TestCase("Aslam-Polar-Linear",          [16, 32, 64, 96, 128],                          False),
+    TestCase("Aslam-Polar-Quadratic",       [16, 32, 64, 96, 128],                          False),
 ]
 
 

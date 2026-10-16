@@ -24,12 +24,28 @@
 #error "Only constant, linear, and quadratic extrapolation is possible"
 #endif  // EXTRAPOLATION_ORDER
 
+#ifndef POLAR_COORDINATES
+// NOLINTNEXTLINE
+#define POLAR_COORDINATES 0
+#endif  // POLAR_COORDINATES
+
 // =================================================================================================
 using Float        = double;
 constexpr Float pi = std::numbers::pi_v<Float>;
 
-constexpr Float L  = 2.0 * pi;
+#if POLAR_COORDINATES
+// Quarter annulus in polar coordinates. The liquid disk is off-center s.t. the normals are not
+// aligned with the grid lines, and the solid contains cells with r*dtheta << dtheta.
+constexpr Float theta_min = 0.0;
+constexpr Float theta_max = pi / 2.0;
+constexpr Float r_min     = 0.1;
+constexpr Float r_max     = 3.0;
+// Ring is wide enough that the levelset is the signed distance to the inner circle everywhere
+constexpr Ring<Float> c{.x = 1.25, .y = 1.25, .r = 0.75, .w = 10.0};
+#else
+constexpr Float L = 2.0 * pi;
 constexpr Ring<Float> c{.x = 0.0, .y = 0.0, .r = 2.0, .w = L};
+#endif  // POLAR_COORDINATES
 
 // =================================================================================================
 namespace Expected {
@@ -41,6 +57,35 @@ constexpr Float factor = 1.0;
 #else
 constexpr Float factor = 1.5;
 #endif
+#if POLAR_COORDINATES
+constexpr std::array L1s_bc = {
+    factor * 4.109328288578e-02,
+    factor * 1.189049143403e-02,
+    factor * 6.366151445679e-03,
+    factor * 3.012302358304e-03,
+    factor * 1.751695064404e-03,
+    factor * 7.439793972791e-04,
+    factor * 3.699942888292e-04,
+};
+constexpr std::array L1s_bl = {
+    factor * 4.295877247058e-02,
+    factor * 1.170534060792e-02,
+    factor * 2.359647897424e-03,
+    factor * 6.034260650062e-04,
+    factor * 1.559631055488e-04,
+    factor * 3.569619327578e-05,
+    factor * 8.672024073642e-06,
+};
+constexpr std::array L1s_bq = {
+    factor * 3.536573030605e-02,
+    factor * 8.913399667433e-03,
+    factor * 1.459113366381e-03,
+    factor * 1.686917123117e-04,
+    factor * 2.165809697164e-05,
+    factor * 2.568809465554e-06,
+    factor * 3.220559315540e-07,
+};
+#else
 constexpr std::array L1s_bc = {
     factor * 6.914268734335e-02,
     factor * 2.140080310971e-02,
@@ -68,6 +113,7 @@ constexpr std::array L1s_bq = {
     factor * 1.110287230971e-05,
     factor * 1.368174702030e-06,
 };
+#endif  // POLAR_COORDINATES
 
 constexpr auto L1_band(Index N) {
   switch (EXTRAPOLATION_ORDER) {
@@ -94,8 +140,8 @@ constexpr auto ddudn(Float x, Float y, Vec2<Float> n, Float& u, Float& dudn) -> 
 
   u                = temp2 * temp0;
   dudn             = temp0 * temp3 + temp2 * temp1;
-  return n.y * (temp4 * temp3 - temp2 * sin(y) * n.y) -
-         n.x * (temp5 * temp1 + temp0 * cos(x) * n.x);
+  return n.y * (temp4 * temp3 - temp2 * std::sin(y) * n.y) -
+         n.x * (temp5 * temp1 + temp0 * std::cos(x) * n.x);
 }
 
 constexpr void
@@ -179,10 +225,18 @@ auto main(int argc, char** argv) -> int {
     return 1;
   }
 
+#if POLAR_COORDINATES
+  const auto output_dir = "./test/output/Aslam-Polar-" + order2str() + '-' + std::to_string(N);
+#else
   const auto output_dir = "./test/output/Aslam-" + order2str() + '-' + std::to_string(N);
+#endif  // POLAR_COORDINATES
   if (!init_output_directory(output_dir)) { return 1; }
 
-  Grid<Float> grid(-L / 2.0, L / 2.0, N, -L / 2.0, L / 2.0, N, 3);
+#if POLAR_COORDINATES
+  Grid<Float> grid(theta_min, theta_max, N, r_min, r_max, N, 3, Coordinates::POLAR);
+#else
+  Grid<Float> grid(-L / 2.0, L / 2.0, N, -L / 2.0, L / 2.0, N, 3, Coordinates::CARTESIAN);
+#endif  // POLAR_COORDINATES
 
   auto u     = grid.alloc_scalar();  // To-be-extrapolated value
   auto u_exp = grid.alloc_scalar();
@@ -190,10 +244,14 @@ auto main(int argc, char** argv) -> int {
 
   // ===============================================================================================
   grid.foreach_a(FOREACH_FUNC {
+#if POLAR_COORDINATES
+    const auto [x, y] = polar2cartesian(grid.xm(i), grid.ym(j));
+#else
     const auto x = grid.xm(i);
     const auto y = grid.ym(j);
-    psi(i, j)    = c.levelset(x, y);
-    u(i, j)      = psi(i, j) > 0.0 ? 0.0 : u_func(x, y);
+#endif
+    psi(i, j) = c.levelset(x, y);
+    u(i, j)   = psi(i, j) > 0.0 ? 0.0 : u_func(x, y);
     switch (EXTRAPOLATION_ORDER) {
       case 0:  u_exp(i, j) = u_expected_constant(x, y); break;
       case 1:  u_exp(i, j) = u_expected_linear(x, y); break;
@@ -208,7 +266,12 @@ auto main(int argc, char** argv) -> int {
   writer.add_field("psi", psi);
   writer.write(0.0);
 
+  // Band size and tau are physical lengths, use the largest physical cell size
+#if POLAR_COORDINATES
+  const double band_size = 6.0 * std::max(grid.r_max() * grid.dtheta(), grid.dr());
+#else
   const double band_size = 6.0 * std::max(grid.dx(), grid.dy());
+#endif  // POLAR_COORDINATES
 #if 0
   const double tau_end = 2.5;
 #else
