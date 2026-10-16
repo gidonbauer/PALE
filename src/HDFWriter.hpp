@@ -409,6 +409,7 @@ class HDFWriter {
   constexpr auto write(const VertexScalar<Float, LAYOUT>* x,
                        const VertexScalar<Float, LAYOUT>* y,
                        Float t = -1.0) -> bool {
+    PALE_PROFILE_SCOPE("HDFWriter.write");
     try {
       m_xdmf_file.seekp(next_write_pos);
 

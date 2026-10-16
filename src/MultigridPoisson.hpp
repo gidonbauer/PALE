@@ -61,6 +61,7 @@ class MultigridSolver {
 
   // -----------------------------------------------------------------------------------------------
   static constexpr void precompute_restriction_weights(const Level& fine, Level& coarse) {
+    PALE_PROFILE_FUNCTION;
     const auto calc_weights = [](const std::vector<Float>& vol,
                                  Index nc,
                                  std::vector<Float>& w_lo,
@@ -80,6 +81,7 @@ class MultigridSolver {
 
   // -----------------------------------------------------------------------------------------------
   static constexpr void precompute_coefficients(Level& level, const BConds<Float>& bconds) {
+    PALE_PROFILE_FUNCTION;
     switch (level.grid.coords()) {
       case Coordinates::CARTESIAN:
         return precompute_coefficients_impl<Metric::Cartesian>(level, bconds);
@@ -203,6 +205,7 @@ class MultigridSolver {
 
   // -----------------------------------------------------------------------------------------------
   constexpr void make_mean_free(const Level& level, Scalar s) const noexcept {
+    // PALE_PROFILE_FUNCTION;
     struct SumVol {
       Float sum, vol;
     };
@@ -225,6 +228,7 @@ class MultigridSolver {
 
   // -----------------------------------------------------------------------------------------------
   constexpr void residual(const Level& level) const noexcept {
+    // PALE_PROFILE_FUNCTION;
     const Float inv_dx2 = 1.0 / Igor::sqr(level.grid.dx());
     const Float inv_dy2 = 1.0 / Igor::sqr(level.grid.dy());
     auto sol            = level.sol;
@@ -366,6 +370,7 @@ class MultigridSolver {
 
   // -----------------------------------------------------------------------------------------------
   constexpr void smooth(const Level& level, Index num_iter) {
+    // PALE_PROFILE_FUNCTION;
     // clang-format off
     switch (level.grid.coords()) {
       case Coordinates::CARTESIAN:           return smooth_cartesian(level, num_iter);  // Red-black GS
@@ -380,6 +385,7 @@ class MultigridSolver {
   constexpr void restrict_residual([[maybe_unused]] const Level& level,
                                    const Scalar fine_res,  // can be level.res or level.rhs
                                    const Level& coarse) {
+    // PALE_PROFILE_FUNCTION;
     IGOR_ASSERT(level.grid.nx() / 2 == coarse.grid.nx() && level.grid.ny() / 2 == coarse.grid.ny(),
                 "Expected `coarse` to be the next coarser level but we skipped something.");
     const auto res = fine_res;
@@ -400,6 +406,7 @@ class MultigridSolver {
 
   // -----------------------------------------------------------------------------------------------
   constexpr void prolongate_and_correct(const Level& coarse, const Level& level) {
+    // PALE_PROFILE_FUNCTION;
     IGOR_ASSERT(level.grid.nx() / 2 == coarse.grid.nx() && level.grid.ny() / 2 == coarse.grid.ny(),
                 "Expected `coarse` to be the next coarser level but we skipped something.");
     const auto lsol = level.sol;
@@ -427,6 +434,7 @@ class MultigridSolver {
 
   // -----------------------------------------------------------------------------------------------
   constexpr void vcycle(size_t l, bool sol_is_zero) {
+    // PALE_PROFILE_FUNCTION;
     IGOR_ASSERT(l < m_levels.size(), "Level {} is out of bounds for {} levels", l, num_levels());
     Level& level = m_levels[l];
 
@@ -507,6 +515,7 @@ class MultigridSolver {
 
   // -----------------------------------------------------------------------------------------------
   constexpr auto solve(Scalar sol, Scalar rhs, Float tol = 1e-4, Index max_iter = 100) -> bool {
+    PALE_PROFILE_SCOPE("MultigridSolver.solve");
     const Level& fine = m_levels[0];
     IGOR_ASSERT(sol.nx() == fine.sol.nx() && sol.ny() == fine.sol.ny() &&
                     sol.nghost() == fine.sol.nghost(),

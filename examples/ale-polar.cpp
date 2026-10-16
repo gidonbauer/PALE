@@ -37,6 +37,8 @@ constexpr Vec2<Float> w{.x = 0.0, .y = 1.0};
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
 void correct_outflow(const Grid<Float, LAYOUT>& grid, FaceVector<Float, LAYOUT> u) {
+  PALE_PROFILE_FUNCTION;
+
   // Rescale the outflow so that it matches the inflow exactly (global continuity).
   Float Qin  = 0.0;
   Float Qout = 0.0;
@@ -52,6 +54,8 @@ void correct_outflow(const Grid<Float, LAYOUT>& grid, FaceVector<Float, LAYOUT> 
 
 // =================================================================================================
 auto main(int argc, char** argv) -> int {
+  PALE_PROFILE_FUNCTION;
+
   const auto usage_str = Igor::detail::format("Usage: {} <grid size>", argv[0]);
   if (argc < 2) {
     Igor::Error("{}", usage_str);

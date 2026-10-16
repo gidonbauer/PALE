@@ -10,6 +10,7 @@ template <typename Float, Layout LAYOUT>
 constexpr void calc_div(const Grid<Float, LAYOUT>& grid,
                         const FaceVector<Float, LAYOUT> uf,
                         Scalar<Float, LAYOUT> div) {
+  PALE_PROFILE_FUNCTION;
   dispatch_metric(grid, DISPATCH_FUNC { OrthogonalCoordinates::calc_div<Metric>(grid, uf, div); });
 }
 
@@ -29,6 +30,7 @@ constexpr void calc_mom_flux(const Grid<Float, LAYOUT>& grid,
                              VertexScalar<Float, LAYOUT> FVX,
                              Scalar<Float, LAYOUT> FVY,
                              FWZ_t FWZ) {
+  PALE_PROFILE_FUNCTION;
   dispatch_metric(
       grid, DISPATCH_FUNC {
         if constexpr (Metric::is_2d != IsNone<FWZ_t>) {
@@ -96,6 +98,7 @@ constexpr void update_u(const Grid<Float, LAYOUT>& grid,
                         const FWZ_t FWZ,
                         const FaceVector<Float, LAYOUT> u_old,
                         FaceVector<Float, LAYOUT> u) {
+  PALE_PROFILE_FUNCTION;
   dispatch_metric(
       grid, DISPATCH_FUNC {
         if constexpr (Metric::is_2d != IsNone<FWZ_t>) {
@@ -154,6 +157,7 @@ constexpr void correct_velocity(const Grid<Float, LAYOUT>& grid,
                                 Float dt,
                                 FaceVector<Float, LAYOUT> u,
                                 Scalar<Float, LAYOUT> p) {
+  PALE_PROFILE_FUNCTION;
   dispatch_metric(
       grid,
       DISPATCH_FUNC { OrthogonalCoordinates::correct_velocity<Metric>(grid, dp, rho, dt, u, p); });
@@ -166,6 +170,7 @@ constexpr auto adjust_dt(const Grid<Float, LAYOUT>& grid,
                          Float rho,
                          Float mu,
                          Float CFL) noexcept -> Float {
+  PALE_PROFILE_FUNCTION;
   Float ux_max = grid.template transform_reduce_face_i<Dimension::X>(
       0.0,
       FOREACH_FUNC { return std::abs(u.x(i, j)); },

@@ -9,6 +9,7 @@ template <typename Float, Layout LAYOUT>
 constexpr void interpolate(const Grid<Float, LAYOUT>& grid,
                            const FaceVector<Float, LAYOUT> uf,
                            Vector<Float, LAYOUT> ui) {
+  PALE_PROFILE_FUNCTION;
   grid.foreach_i(FOREACH_FUNC {
     ui.x(i, j) = (uf.right(i, j) + uf.left(i, j)) / 2.0;
     ui.y(i, j) = (uf.top(i, j) + uf.bottom(i, j)) / 2.0;
@@ -28,6 +29,7 @@ struct Stats {
 template <typename Float, Layout LAYOUT>
 constexpr auto stats(const Grid<Float, LAYOUT>& grid, const Scalar<Float, LAYOUT> f)
     -> Stats<Float> {
+  PALE_PROFILE_FUNCTION;
   Stats s = grid.transform_reduce_i(
       Stats<Float>{
           .min    = std::numeric_limits<Float>::max(),
@@ -63,6 +65,7 @@ template <typename Float, Layout LAYOUT>
 constexpr auto stats(const Grid<Float, LAYOUT>& grid,
                      const Scalar<Float, LAYOUT> f,
                      const Scalar<Float, LAYOUT> metric) -> Stats<Float> {
+  PALE_PROFILE_FUNCTION;
   Stats s = grid.transform_reduce_i(
       Stats<Float>{
           .min    = std::numeric_limits<Float>::max(),

@@ -160,6 +160,7 @@ template <typename Shape, typename Float, Layout LAYOUT, typename IB_CORR_t>
 requires(IsScalar<IB_CORR_t, Float, LAYOUT> || IsFaceVector<IB_CORR_t, Float, LAYOUT>)
 constexpr void
 calc_ib_correction_shape(const Grid<Float, LAYOUT>& grid, const Shape& wall, IB_CORR_t ib_corr) {
+  PALE_PROFILE_FUNCTION;
   auto immersed_wall = [&](Float x, Float y) {
     switch (grid.coords()) {
       case Coordinates::CARTESIAN:           return wall.contains(Vec2<Float>{.x = x, .y = y});
@@ -244,6 +245,7 @@ constexpr void correct_velocity_ib_implicit_euler(const Grid<Float, LAYOUT>& gri
                                                   Float mu,
                                                   Float dt,
                                                   FaceVector<Float, LAYOUT> u) {
+  PALE_PROFILE_FUNCTION;
   const auto nu = mu / rho;
   grid.template foreach_face_i<Dimension::X>(
       FOREACH_FUNC { u.x(i, j) /= 1.0 + dt * nu * ib_corr.x(i, j); });
@@ -352,6 +354,7 @@ constexpr void update_u_ib_semi_analytical(const Grid<Float, LAYOUT>& grid,
                                            const FaceVector<Float, LAYOUT> ib_corr,
                                            const FaceVector<Float, LAYOUT> u_old,
                                            FaceVector<Float, LAYOUT> u) {
+  PALE_PROFILE_FUNCTION;
   dispatch_metric(
       grid, DISPATCH_FUNC {
         if constexpr (Metric::is_2d != IsNone<FWZ_t>) {
