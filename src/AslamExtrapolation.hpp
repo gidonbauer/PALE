@@ -65,6 +65,8 @@ constexpr void aslam_advection_do_step_weno(const Grid<Float, LAYOUT>& grid,
   dispatch_metric(
       grid, DISPATCH_FUNC {
         grid.foreach_i(FOREACH_FUNC {
+          if (u.x(i, j) == 0.0 && u.y(i, j) == 0.0) { return; }
+
           const double f_minus = u.x(i, j) >= 0.0 ? fL.x(i, j) : fR.x(i, j);
           const double f_plus  = u.x(i, j) >= 0.0 ? fL.x(i + 1, j) : fR.x(i + 1, j);
           const double g_minus = u.y(i, j) >= 0.0 ? fL.y(i, j) : fR.y(i, j);
@@ -97,6 +99,8 @@ constexpr void aslam_advection_do_step_minmod(const Grid<Float, LAYOUT>& grid,
   dispatch_metric(
       grid, DISPATCH_FUNC {
         grid.foreach_i(FOREACH_FUNC {
+          if (u.x(i, j) == 0.0 && u.y(i, j) == 0.0) { return; }
+
           const auto x = grid.xm(i);
           const auto y = grid.ym(j);
           // physical cell size
@@ -262,7 +266,27 @@ constexpr void constant_extrapolate(const Grid<Float, LAYOUT>& grid,
   // Forward Euler step g <- g + dtau * L(g)
   const auto euler_step = [&](Scalar<Float, LAYOUT> g) {
 #ifdef PALE_ASLAM_WENO
-    weno_reconstruction(grid, g, fL, fR);
+    // weno_reconstruction(grid, g, fL, fR);
+    {
+      IGOR_ASSERT(grid.nghost() >= 3, "WENO-5 scheme requires at least 3 ghost cells.");
+
+      grid.template foreach_face_i<Dimension::X>(FOREACH_FUNC {
+        if (!(psi(i - 1, j) >= 0.0 || psi(i, j) >= 0.0)) { return; }
+        fL.x(i, j) = weno_left_biased_reconstruction(
+            f(i - 3, j), f(i - 2, j), f(i - 1, j), f(i, j), f(i + 1, j));
+        fR.x(i, j) = weno_right_biased_reconstruction(
+            f(i - 2, j), f(i - 1, j), f(i, j), f(i + 1, j), f(i + 2, j));
+      });
+
+      grid.template foreach_face_i<Dimension::Y>(FOREACH_FUNC {
+        if (!(psi(i, j - 1) >= 0.0 || psi(i, j) >= 0.0)) { return; }
+        fL.y(i, j) = weno_left_biased_reconstruction(
+            f(i, j - 3), f(i, j - 2), f(i, j - 1), f(i, j), f(i, j + 1));
+        fR.y(i, j) = weno_right_biased_reconstruction(
+            f(i, j - 2), f(i, j - 1), f(i, j), f(i, j + 1), f(i, j + 2));
+      });
+    }
+
     detail::aslam_advection_do_step_weno(grid, dtau, g, u, fL, fR, src, g);
 #else
     detail::aslam_advection_do_step_minmod(grid, dtau, g, u, src, dfdt, g);
