@@ -13,7 +13,8 @@ TARGETS = bin/advection-diffusion \
           bin/aslam-extrapolate \
           bin/aslam-extrapolate-neumann \
           bin/levelset \
-          bin/levelset-polar
+          bin/levelset-polar \
+          bin/electrode
 
 POISFFT_TARGETS = bin/advection-diffusion bin/mac bin/lid-driven-cavity bin/taylor-green bin/ib-cartesian
 GSL_TARGETS = bin/old-scriven-3d bin/scriven-2d bin/scriven-3d

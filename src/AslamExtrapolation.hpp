@@ -91,6 +91,10 @@ constexpr void aslam_advection_do_step_minmod(const Grid<Float, LAYOUT>& grid,
                                               const SRC_t src,
                                               Scalar<Float, LAYOUT> dfdt,
                                               Scalar<Float, LAYOUT> f) {
+  IGOR_ASSERT(grid.nghost() >= 2,
+              "MinMod advection requires at least 2 ghost cells but got only {}",
+              grid.nghost());
+
   auto aslam_minmod = [](double a, double b) {
     if (a * b <= 0.0) { return 0.0; }
     return std::abs(a) < std::abs(b) ? a : b;

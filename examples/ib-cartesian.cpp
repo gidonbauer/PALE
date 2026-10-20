@@ -248,7 +248,7 @@ auto main(int argc, char** argv) -> int {
   Float dt          = 0.0;
   Float t           = 0.0;
 
-  grid.foreach_i(FOREACH_FUNC {
+  grid.foreach_a(FOREACH_FUNC {
     const auto x      = grid.xm(i);
     const auto y      = grid.ym(j);
     ib_levelset(i, j) = wall.levelset(x, y);

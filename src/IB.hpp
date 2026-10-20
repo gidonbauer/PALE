@@ -95,6 +95,22 @@ constexpr void calc_ib_volume_fraction(const Grid<Float, LAYOUT>& grid,
 }
 
 // -------------------------------------------------------------------------------------------------
+template <typename Shape, typename Float, Layout LAYOUT>
+constexpr void calc_ib_levelset_shape(const Grid<Float, LAYOUT>& grid,
+                                      const Shape& wall,
+                                      Scalar<Float, LAYOUT> ib_levelset) {
+  switch (grid.coords()) {
+    case Coordinates::CARTESIAN:
+      grid.foreach_a(FOREACH_FUNC { ib_levelset(i, j) = wall.levelset(grid.xm(i), grid.ym(j)); });
+    case Coordinates::SYMMETRIC_SPHERICAL:
+    case Coordinates::POLAR:
+      grid.foreach_a(FOREACH_FUNC {
+        ib_levelset(i, j) = wall.levelset(polar2cartesian(grid.thetam(i), grid.rm(j)));
+      });
+  }
+}
+
+// -------------------------------------------------------------------------------------------------
 // Fraction delta in (0, 1] of the step p -> n at which the wall is crossed
 template <typename FUNC, typename Float>
 [[nodiscard]] constexpr auto

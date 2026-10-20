@@ -24,7 +24,7 @@ auto main() -> int {
   {
     Circle<Float> shape{.x = 0.5, .y = 0.5, .r = 0.25};
     fill(psi, 0.0);
-    grid.foreach_i(
+    grid.foreach_a(
         FOREACH_FUNC { psi(i, j) = shape.levelset(polar2cartesian(grid.xm(i), grid.ym(j))); });
     writer.write(t);
     t += 1.0;
@@ -33,7 +33,7 @@ auto main() -> int {
   {
     Ring<Float> shape{.x = 0.5, .y = 0.5, .r = 0.25, .w = 0.25};
     fill(psi, 0.0);
-    grid.foreach_i(
+    grid.foreach_a(
         FOREACH_FUNC { psi(i, j) = shape.levelset(polar2cartesian(grid.xm(i), grid.ym(j))); });
     writer.write(t);
     t += 1.0;
@@ -42,7 +42,7 @@ auto main() -> int {
   {
     Ring<Float> shape{.x = 0.5, .y = 0.5, .r = 0.5, .w = -0.25};
     fill(psi, 0.0);
-    grid.foreach_i(
+    grid.foreach_a(
         FOREACH_FUNC { psi(i, j) = shape.levelset(polar2cartesian(grid.xm(i), grid.ym(j))); });
     writer.write(t);
     t += 1.0;
@@ -51,7 +51,7 @@ auto main() -> int {
   {
     Rect<Float> shape{.x = 0.25, .y = 0.25, .w = 0.5, .h = 0.5};
     fill(psi, 0.0);
-    grid.foreach_i(
+    grid.foreach_a(
         FOREACH_FUNC { psi(i, j) = shape.levelset(polar2cartesian(grid.xm(i), grid.ym(j))); });
     writer.write(t);
     t += 1.0;
@@ -60,7 +60,7 @@ auto main() -> int {
   {
     Rect<Float> shape{.x = 0.75, .y = 0.75, .w = -0.5, .h = -0.5};
     fill(psi, 0.0);
-    grid.foreach_i(
+    grid.foreach_a(
         FOREACH_FUNC { psi(i, j) = shape.levelset(polar2cartesian(grid.xm(i), grid.ym(j))); });
     writer.write(t);
     t += 1.0;
