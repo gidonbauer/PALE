@@ -12,6 +12,7 @@
 template <typename Float, Layout LAYOUT>
 constexpr void
 normals(const Grid<Float, LAYOUT>& grid, const Scalar<Float, LAYOUT> psi, Vector<Float, LAYOUT> n) {
+  PALE_PROFILE_FUNCTION;
   dispatch_metric(
       grid, DISPATCH_FUNC {
         grid.foreach_i(FOREACH_FUNC {
@@ -63,6 +64,7 @@ constexpr void aslam_advection_do_step_weno(const Grid<Float, LAYOUT>& grid,
                                             const FaceVector<Float, LAYOUT> fR,
                                             const SRC_t src,
                                             Scalar<Float, LAYOUT> f) {
+  PALE_PROFILE_FUNCTION;
   dispatch_metric(
       grid, DISPATCH_FUNC {
         grid.foreach_i(FOREACH_FUNC {
@@ -92,6 +94,7 @@ constexpr void aslam_advection_do_step_minmod(const Grid<Float, LAYOUT>& grid,
                                               const SRC_t src,
                                               Scalar<Float, LAYOUT> dfdt,
                                               Scalar<Float, LAYOUT> f) {
+  PALE_PROFILE_FUNCTION;
   IGOR_ASSERT(grid.nghost() >= 2,
               "MinMod advection requires at least 2 ghost cells but got only {}",
               grid.nghost());
@@ -230,6 +233,8 @@ constexpr void constant_extrapolate(const Grid<Float, LAYOUT>& grid,
                                     Float band_width,
                                     N_t n_in  = None{},
                                     SRC_t src = None{}) {
+  PALE_PROFILE_FUNCTION;
+
   auto n = IF_NONE_ELSE(N_t, grid.alloc_vector(), n_in);
   IGOR_DEFER(if constexpr (IsNone<N_t>) { grid.free(n); });
   if constexpr (IsNone<N_t>) { normals(grid, psi, n); }
@@ -327,6 +332,8 @@ constexpr void linear_extrapolate(const Grid<Float, LAYOUT>& grid,
                                   Scalar<Float, LAYOUT> psi,
                                   Float band_width,
                                   N_t n_in = None{}) {
+  PALE_PROFILE_FUNCTION;
+
   auto n = IF_NONE_ELSE(N_t, grid.alloc_vector(), n_in);
   IGOR_DEFER(if constexpr (IsNone<N_t>) { grid.free(n); });
   if constexpr (IsNone<N_t>) { normals(grid, psi, n); }
@@ -349,6 +356,8 @@ constexpr void quadratic_extrapolate(const Grid<Float, LAYOUT>& grid,
                                      Scalar<Float, LAYOUT> psi,
                                      Float band_width,
                                      N_t n_in = None{}) {
+  PALE_PROFILE_FUNCTION;
+
   auto n = IF_NONE_ELSE(N_t, grid.alloc_vector(), n_in);
   IGOR_DEFER(if constexpr (IsNone<N_t>) { grid.free(n); });
   if constexpr (IsNone<N_t>) { normals(grid, psi, n); }
@@ -376,6 +385,8 @@ constexpr void neumann_extrapolate(const Grid<Float, LAYOUT>& grid,
                                    Float dfdn,
                                    Float band_width,
                                    N_t n_in = None{}) {
+  PALE_PROFILE_FUNCTION;
+
   static_assert(ORDER == 1 || ORDER == 2,
                 "ORDER can be 1 for linear or 2 for quadratic extrapolation.");
 

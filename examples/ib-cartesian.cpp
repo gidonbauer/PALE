@@ -49,6 +49,7 @@ constexpr auto inlet_u(Float y) -> Float {
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
 void correct_outflow(const Grid<Float, LAYOUT>& grid, FaceVector<Float, LAYOUT> u) {
+  PALE_PROFILE_FUNCTION;
   // Rescale the outflow so that it matches the inflow exactly (global continuity).
   Float Qin  = 0.0;
   Float Qout = 0.0;
@@ -205,6 +206,8 @@ constexpr void update_s_ib_semi_analytical(const Grid<Float, LAYOUT>& grid,
 
 // =================================================================================================
 auto main(int argc, char** argv) -> int {
+  PALE_PROFILE_FUNCTION;
+
   const auto usage_str = Igor::detail::format("Usage: {} <grid size>", argv[0]);
   if (argc < 2) {
     Igor::Error("{}", usage_str);
@@ -391,7 +394,9 @@ auto main(int argc, char** argv) -> int {
       // 2) Pressure correction
       calc_div(grid, u, div);
       grid.foreach_i(FOREACH_FUNC { div(i, j) *= rho / local_dt; });
+      PALE_PROFILE_BEGIN("poisson");
       solver.execute(dp.data(), div.data(), ngs.data(), ngs.data());
+      PALE_PROFILE_END("poisson");
       apply_neumann_bconds(grid, dp);
 
       // 3) Project

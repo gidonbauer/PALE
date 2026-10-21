@@ -53,9 +53,20 @@ CXX_INC += ${HDF_INC}
 CXX_LIB += ${HDF_LIB}
 # = HDF5 =========================================
 
-
 # = GSL ==========================================
 GSL_DIR ?= /opt/homebrew/opt/gsl
 GSL_INC = -I${GSL_DIR}/include
 GSL_LIB = -L${GSL_DIR}/lib -Wl,-rpath,${GSL_DIR}/lib -lgsl -lgslcblas
 # = GSL ==========================================
+
+# = CALIPER ======================================
+CALIPER_DIR = ${HOME}/opt/Caliper/installdir
+CALIPER_INC = -I${CALIPER_DIR}/include
+CALIPER_LIB = -Wl,-rpath,${CALIPER_DIR}/lib -L${CALIPER_DIR}/lib -lcaliper
+
+ifeq (${PROFILE}, 1)
+	CXX_FLAGS += -DPALE_PROFILE
+	CXX_INC += ${CALIPER_INC}
+	CXX_LIB += ${CALIPER_LIB}
+endif
+# = CALIPER ======================================

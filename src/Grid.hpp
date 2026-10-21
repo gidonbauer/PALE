@@ -17,6 +17,7 @@
 #include <Igor/Math.hpp>
 
 #include "Metrics.hpp"
+#include "Profile.hpp"
 
 #if defined(__clang__) || defined(__GNUC__)
 #define PALE_ALWAYS_INLINE __attribute__((always_inline))
@@ -181,6 +182,7 @@ class Grid {
   std::shared_ptr<std::vector<Float*>> m_to_free = std::make_shared<std::vector<Float*>>();
 
   constexpr auto alloc(Index nx, Index ny, Index nghost) const noexcept -> Scalar {
+    PALE_PROFILE_FUNCTION;
     IGOR_ASSERT(nx > 0 && ny > 0 && nghost >= 0,
                 "Invalid dimensions: nx={}, ny={}, nghost={}",
                 nx,
@@ -299,6 +301,7 @@ class Grid {
   }
 
   constexpr void free(Scalar s) const noexcept {
+    PALE_PROFILE_FUNCTION;
     const auto it = std::find(m_to_free->begin(), m_to_free->end(), s.data());
     if (it == m_to_free->end()) {
       Igor::Panic("The field with memory location {} was not allocated by this grid.",
@@ -704,12 +707,13 @@ class FaceVector {
 // = Copy ==========================================================================================
 template <typename Float, Layout LAYOUT>
 constexpr void copy(const Scalar<Float, LAYOUT> src, Scalar<Float, LAYOUT> dst) {
+  PALE_PROFILE_FUNCTION;
   std::copy_n(src.data(), src.size(), dst.data());
 }
 
 template <typename Float, Layout LAYOUT>
 constexpr void copy(const VertexScalar<Float, LAYOUT> src, VertexScalar<Float, LAYOUT> dst) {
-  std::copy_n(src.data(), src.size(), dst.data());
+  copy(src.scalar(), dst.scalar());
 }
 
 template <typename Float, Layout LAYOUT>
