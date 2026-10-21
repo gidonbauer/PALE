@@ -4,7 +4,7 @@
 #include <Igor/Math.hpp>
 #include <Igor/Timer.hpp>
 
-// #define PALE_ASLAM_WENO
+#define PALE_ASLAM_WENO
 #include "Advection-Diffusion.hpp"
 #include "AslamExtrapolation.hpp"
 #include "BoundaryConditions.hpp"

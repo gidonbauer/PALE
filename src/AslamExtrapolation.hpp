@@ -279,6 +279,7 @@ constexpr void constant_extrapolate(const Grid<Float, LAYOUT>& grid,
 #ifdef PALE_ASLAM_WENO
     // weno_reconstruction(grid, g, fL, fR);
     {
+      PALE_PROFILE_SCOPE("weno_reconstruction");
       IGOR_ASSERT(grid.nghost() >= 3, "WENO-5 scheme requires at least 3 ghost cells.");
 
       grid.template foreach_face_i<Dimension::X>(FOREACH_FUNC {

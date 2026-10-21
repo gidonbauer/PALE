@@ -477,6 +477,8 @@ class MultigridSolver {
       : m_bconds(std::move(bconds)),
         m_num_iter_pre(num_iter_pre),
         m_num_iter_post(num_iter_post) {
+    PALE_PROFILE_SCOPE("MultigridSolver.constructor");
+
     IGOR_ASSERT(grid.nghost() >= 1, "Expected at least one ghost cell, but got {}", grid.nghost());
     IGOR_ASSERT(min_size >= 1, "Expected a positive minimum grid size, but got {}", min_size);
 
@@ -567,6 +569,8 @@ class MultigridSolver {
 
   // -----------------------------------------------------------------------------------------------
   constexpr void move_grid_by_velocity(const Vec2<Float>& w, Float dt) noexcept {
+    PALE_PROFILE_FUNCTION;
+
     for (size_t i = 0; i < m_levels.size(); ++i) {
       auto& level = m_levels[i];
       level.grid.move_grid_by_velocity(w, dt);
