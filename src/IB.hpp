@@ -102,11 +102,13 @@ constexpr void calc_ib_levelset_shape(const Grid<Float, LAYOUT>& grid,
   switch (grid.coords()) {
     case Coordinates::CARTESIAN:
       grid.foreach_a(FOREACH_FUNC { ib_levelset(i, j) = wall.levelset(grid.xm(i), grid.ym(j)); });
+      break;
     case Coordinates::SYMMETRIC_SPHERICAL:
     case Coordinates::POLAR:
       grid.foreach_a(FOREACH_FUNC {
         ib_levelset(i, j) = wall.levelset(polar2cartesian(grid.thetam(i), grid.rm(j)));
       });
+      break;
   }
 }
 
@@ -182,6 +184,7 @@ calc_ib_correction_shape(const Grid<Float, LAYOUT>& grid, const Shape& wall, IB_
       case Coordinates::POLAR:
       case Coordinates::SYMMETRIC_SPHERICAL: return wall.contains(polar2cartesian(x, y));
     }
+    Igor::Panic("Unreachable");
   };
 
   const auto dx = grid.dx();

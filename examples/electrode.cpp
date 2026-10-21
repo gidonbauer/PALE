@@ -1,9 +1,10 @@
 #include <charconv>
 #include <numbers>
 
+#include <Igor/Math.hpp>
 #include <Igor/Timer.hpp>
 
-#define PALE_ASLAM_WENO
+// #define PALE_ASLAM_WENO
 #include "Advection-Diffusion.hpp"
 #include "AslamExtrapolation.hpp"
 #include "BoundaryConditions.hpp"
@@ -34,10 +35,11 @@ constexpr Float Uinf      = Re * mu / (rho * r_min);  // [m/s]
 constexpr Float D         = (Uinf * r_min) / Pe;      // [m^2/s]
 
 constexpr Float CFL       = 0.7;
-constexpr Float tend      = 1.0;
+constexpr Float tend      = 50.0;
 constexpr Float dt_write  = tend / 100.0;
 
-constexpr Rect<Float> wall{.x = -1.5, .y = -100.0, .w = -100.0, .h = 200.0};
+constexpr HalfPlane<Float> wall{.x = -1.5, .y = 0.0, .nx = -1.0, .ny = 0.0};
+constexpr Float h = Igor::sqrt(Igor::sqr(r_max) - Igor::sqr(wall.x));
 // = Setup =========================================================================================
 
 // =================================================================================================
@@ -55,7 +57,7 @@ auto main(int argc, char** argv) -> int {
     return 1;
   }
 
-  const auto output_dir = get_output_directory();
+  const auto output_dir = get_output_directory() + "/" + std::to_string(N);
   if (!init_output_directory(output_dir)) { return 1; }
 
   Igor::Info("Re   = {}", Re);
@@ -84,27 +86,18 @@ auto main(int argc, char** argv) -> int {
 
   auto ib_corr_face      = grid.alloc_face_vector();
   auto ib_levelset       = grid.alloc_scalar();
-  auto ib_free           = grid.alloc_scalar();
+  auto ib_free           = FOREACH_FUNC { return ib_levelset(i, j) <= 0.0; };
 
   Float dt               = 0.0;
   Float t                = 0.0;
+
+  Float s_sum_exp        = 0.0;
 
   const Float dsdn       = 1.0;
   const Float band_width = 3.0;
 
   calc_ib_correction_shape(grid, wall, ib_corr_face);
   calc_ib_levelset_shape(grid, wall, ib_levelset);
-  grid.foreach_a(FOREACH_FUNC {
-    // ib_free(i, j) =
-    //     1.0 -
-    //     quadrature([](Float theta, Float r) { return wall.contains(polar2cartesian(theta, r)); },
-    //                grid.theta(i),
-    //                grid.theta(i + 1),
-    //                grid.r(j),
-    //                grid.r(j + 1)) /
-    //         grid.dv(i, j);
-    ib_free(i, j) = ib_levelset(i, j) <= 0.0 ? 1.0 : 0.0;
-  });
 
   const BConds<Float> u_bconds{
       .left   = Periodic{},
@@ -167,6 +160,7 @@ auto main(int argc, char** argv) -> int {
   monitor.add_variable(&s_stats.min, "min(s)");
   monitor.add_variable(&s_stats.max, "max(s)");
   monitor.add_variable(&s_stats.sum, "sum(s)");
+  monitor.add_variable(&s_sum_exp, "exp. sum(s)");
   monitor.add_variable(&div_max, "absmax(div)");
   monitor.add_variable(&mg_res, "res(MG)");
   monitor.add_variable(&mg_cycles, "cycles(MG)");
@@ -239,6 +233,7 @@ auto main(int argc, char** argv) -> int {
     s_stats    = stats(grid, s, ib_free);
     div_stats  = stats(grid, div);
     div_max    = std::max(std::abs(div_stats.min), std::abs(div_stats.max));
+    s_sum_exp += h * D * dsdn * dt;
 
     t         += dt;
     if (should_save(t, dt, dt_write, tend)) {

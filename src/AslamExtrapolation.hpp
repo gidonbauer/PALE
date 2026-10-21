@@ -37,6 +37,7 @@ constexpr auto calc_tau_end(const Grid<Float, LAYOUT>& grid, Float band_width) -
     case Coordinates::SYMMETRIC_SPHERICAL:
     case Coordinates::POLAR: return factor * std::max(grid.r_max() * grid.dtheta(), grid.dr());
   }
+  Igor::Panic("Unreachable");
 }
 
 // =================================================================================================
@@ -253,6 +254,7 @@ constexpr void constant_extrapolate(const Grid<Float, LAYOUT>& grid,
       case Coordinates::SYMMETRIC_SPHERICAL:
       case Coordinates::POLAR:               return std::min(grid.rm(0) * grid.dtheta(), grid.dr());
     }
+    Igor::Panic("Unreachable");
   }();
 
   auto f_old = grid.alloc_scalar();

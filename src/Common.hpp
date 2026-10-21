@@ -59,10 +59,16 @@ constexpr auto stats(const Grid<Float, LAYOUT>& grid, const Scalar<Float, LAYOUT
   return s;
 }
 
-template <typename Float, Layout LAYOUT>
+template <typename FUNC, typename Float>
+concept IsMetricFunc = requires(FUNC f) {
+  { f(std::declval<Index>(), std::declval<Index>()) } -> std::convertible_to<Float>;
+};
+
+template <typename Float, Layout LAYOUT, typename METRIC_t>
+requires(IsScalar<METRIC_t, Float, LAYOUT> || IsMetricFunc<METRIC_t, Float>)
 constexpr auto stats(const Grid<Float, LAYOUT>& grid,
                      const Scalar<Float, LAYOUT> f,
-                     const Scalar<Float, LAYOUT> metric) -> Stats<Float> {
+                     const METRIC_t metric) -> Stats<Float> {
   Stats s = grid.transform_reduce_i(
       Stats<Float>{
           .min    = std::numeric_limits<Float>::max(),
