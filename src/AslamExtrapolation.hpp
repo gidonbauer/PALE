@@ -30,34 +30,33 @@ normals(const Grid<Float, LAYOUT>& grid, const Scalar<Float, LAYOUT> psi, Vector
 
 namespace detail {
 
-template <typename Float, Layout LAYOUT>
-constexpr auto calc_tau_end(const Grid<Float, LAYOUT>& grid, Float band_width) -> Float {
-  const auto factor = 4.0 * band_width;
-  switch (grid.coords()) {
-    case Coordinates::CARTESIAN:           return factor * std::max(grid.dx(), grid.dy());
-    case Coordinates::SYMMETRIC_SPHERICAL:
-    case Coordinates::POLAR: return factor * std::max(grid.r_max() * grid.dtheta(), grid.dr());
-  }
-  Igor::Panic("Unreachable");
-}
-
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
 constexpr void advection_velocity(const Grid<Float, LAYOUT>& grid,
                                   const Scalar<Float, LAYOUT> psi,
+                                  Float band_width,
                                   const Vector<Float, LAYOUT> n,
                                   Vector<Float, LAYOUT> u) {
   // u = H(psi)*n; where H(x) is the Heavyside function
-  grid.foreach_i(FOREACH_FUNC {
-    u.x(i, j) = psi(i, j) > 0.0 ? n.x(i, j) : 0.0;
-    u.y(i, j) = psi(i, j) > 0.0 ? n.y(i, j) : 0.0;
-  });
+  dispatch_metric(
+      grid, DISPATCH_FUNC {
+        grid.foreach_i(FOREACH_FUNC {
+          const auto x  = grid.xm(i);
+          const auto y  = grid.ym(j);
+          const auto h1 = Metric::h1(x, y);
+          const auto h2 = Metric::h2(x, y);
+          const auto in_band =
+              psi(i, j) <= (band_width + 3) * std::max(h1 * grid.dx(), h2 * grid.dy());
+
+          u.x(i, j) = in_band && psi(i, j) > 0.0 ? n.x(i, j) : 0.0;
+          u.y(i, j) = in_band && psi(i, j) > 0.0 ? n.y(i, j) : 0.0;
+        });
+      });
 }
 
 // =================================================================================================
 template <typename Float, Layout LAYOUT, IsNoneOr<Scalar<Float, LAYOUT>> SRC_t>
 constexpr void aslam_advection_do_step_weno(const Grid<Float, LAYOUT>& grid,
-                                            Float dt,
                                             const Scalar<Float, LAYOUT> f_old,
                                             const Vector<Float, LAYOUT> u,
                                             const FaceVector<Float, LAYOUT> fL,
@@ -77,9 +76,15 @@ constexpr void aslam_advection_do_step_weno(const Grid<Float, LAYOUT>& grid,
 
           const auto x         = grid.xm(i);
           const auto y         = grid.ym(j);
-          f(i, j) =
-              f_old(i, j) - dt * (u.x(i, j) * (f_plus - f_minus) / (grid.dx() * Metric::h1(x, y)) +
-                                  u.y(i, j) * (g_plus - g_minus) / (grid.dy() * Metric::h2(x, y)));
+          const auto h1        = Metric::h1(x, y);
+          const auto h2        = Metric::h2(x, y);
+
+          // Use local timestep because we are interested in a steady-state solution
+          constexpr Float CFL = 0.9;
+          const Float dt      = CFL / (std::abs(u.x(i, j)) / (h1 * grid.dx()) +
+                                       std::abs(u.y(i, j)) / (h2 * grid.dy()));
+          f(i, j) = f_old(i, j) - dt * (u.x(i, j) * (f_plus - f_minus) / (grid.dx() * h1) +
+                                        u.y(i, j) * (g_plus - g_minus) / (grid.dy() * h2));
           if constexpr (!IsNone<SRC_t>) { f(i, j) += dt * src(i, j); }
         });
       });
@@ -88,7 +93,6 @@ constexpr void aslam_advection_do_step_weno(const Grid<Float, LAYOUT>& grid,
 // =================================================================================================
 template <typename Float, Layout LAYOUT, IsNoneOr<Scalar<Float, LAYOUT>> SRC_t>
 constexpr void aslam_advection_do_step_minmod(const Grid<Float, LAYOUT>& grid,
-                                              Float dt,
                                               const Scalar<Float, LAYOUT> f_old,
                                               const Vector<Float, LAYOUT> u,
                                               const SRC_t src,
@@ -158,7 +162,24 @@ constexpr void aslam_advection_do_step_minmod(const Grid<Float, LAYOUT>& grid,
         });
       });
 
-  grid.foreach_i(FOREACH_FUNC { f(i, j) = f_old(i, j) + dt * dfdt(i, j); });
+  dispatch_metric(
+      grid, DISPATCH_FUNC {
+        grid.foreach_i(FOREACH_FUNC {
+          if (u.x(i, j) == 0.0 && u.y(i, j) == 0.0) { return; }
+
+          const auto x  = grid.xm(i);
+          const auto y  = grid.ym(j);
+          const auto h1 = Metric::h1(x, y);
+          const auto h2 = Metric::h2(x, y);
+
+          // Use local timestep because we are interested in a steady-state solution
+          constexpr Float CFL = 0.4;
+          const Float dt      = CFL / (std::abs(u.x(i, j)) / (h1 * grid.dx()) +
+                                       std::abs(u.y(i, j)) / (h2 * grid.dy()));
+
+          f(i, j)             = f_old(i, j) + dt * dfdt(i, j);
+        });
+      });
 }
 
 // =================================================================================================
@@ -241,26 +262,10 @@ constexpr void constant_extrapolate(const Grid<Float, LAYOUT>& grid,
 
   auto u = grid.alloc_vector();
   IGOR_DEFER(grid.free(u););
-  detail::advection_velocity(grid, psi, n, u);
+  detail::advection_velocity(grid, psi, band_width, n, u);
 
   // Solve PDE
   // du/dtau + H(psi) n * grad(f) = 0
-
-#ifdef PALE_ASLAM_WENO
-  constexpr Float CFL = 0.9;
-#else   // MinMod
-  constexpr Float CFL = 0.4;
-#endif  // PALE_ASLAM_WENO
-
-  // Max. velocity is 1
-  const Float dtau = CFL * [&] {
-    switch (grid.coords()) {
-      case Coordinates::CARTESIAN:           return std::min(grid.dx(), grid.dy());
-      case Coordinates::SYMMETRIC_SPHERICAL:
-      case Coordinates::POLAR:               return std::min(grid.rm(0) * grid.dtheta(), grid.dr());
-    }
-    Igor::Panic("Unreachable");
-  }();
 
   auto f_old = grid.alloc_scalar();
   IGOR_DEFER(grid.free(f_old););
@@ -278,36 +283,45 @@ constexpr void constant_extrapolate(const Grid<Float, LAYOUT>& grid,
   const auto euler_step = [&](Scalar<Float, LAYOUT> g) {
 #ifdef PALE_ASLAM_WENO
     // weno_reconstruction(grid, g, fL, fR);
+    // Only do necessary reconstructions
     {
       PALE_PROFILE_SCOPE("weno_reconstruction");
       IGOR_ASSERT(grid.nghost() >= 3, "WENO-5 scheme requires at least 3 ghost cells.");
 
       grid.template foreach_face_i<Dimension::X>(FOREACH_FUNC {
         if (!(psi(i - 1, j) >= 0.0 || psi(i, j) >= 0.0)) { return; }
-        fL.x(i, j) = weno_left_biased_reconstruction(
-            f(i - 3, j), f(i - 2, j), f(i - 1, j), f(i, j), f(i + 1, j));
-        fR.x(i, j) = weno_right_biased_reconstruction(
-            f(i - 2, j), f(i - 1, j), f(i, j), f(i + 1, j), f(i + 2, j));
+        if (u.x(i - 1, j) >= 0.0 || u.x(i, j) >= 0.0) {
+          fL.x(i, j) = weno_left_biased_reconstruction(
+              g(i - 3, j), g(i - 2, j), g(i - 1, j), g(i, j), g(i + 1, j));
+        }
+        if (u.x(i - 1, j) <= 0.0 || u.x(i, j) <= 0.0) {
+          fR.x(i, j) = weno_right_biased_reconstruction(
+              g(i - 2, j), g(i - 1, j), g(i, j), g(i + 1, j), g(i + 2, j));
+        }
       });
 
       grid.template foreach_face_i<Dimension::Y>(FOREACH_FUNC {
         if (!(psi(i, j - 1) >= 0.0 || psi(i, j) >= 0.0)) { return; }
-        fL.y(i, j) = weno_left_biased_reconstruction(
-            f(i, j - 3), f(i, j - 2), f(i, j - 1), f(i, j), f(i, j + 1));
-        fR.y(i, j) = weno_right_biased_reconstruction(
-            f(i, j - 2), f(i, j - 1), f(i, j), f(i, j + 1), f(i, j + 2));
+        if (u.y(i, j - 1) >= 0.0 || u.y(i, j) >= 0.0) {
+          fL.y(i, j) = weno_left_biased_reconstruction(
+              g(i, j - 3), g(i, j - 2), g(i, j - 1), g(i, j), g(i, j + 1));
+        }
+        if (u.y(i, j - 1) < 0.0 || u.y(i, j) < 0.0) {
+          fR.y(i, j) = weno_right_biased_reconstruction(
+              g(i, j - 2), g(i, j - 1), g(i, j), g(i, j + 1), g(i, j + 2));
+        }
       });
     }
 
-    detail::aslam_advection_do_step_weno(grid, dtau, g, u, fL, fR, src, g);
+    detail::aslam_advection_do_step_weno(grid, g, u, fL, fR, src, g);
 #else
-    detail::aslam_advection_do_step_minmod(grid, dtau, g, u, src, dfdt, g);
+    detail::aslam_advection_do_step_minmod(grid, g, u, src, dfdt, g);
 #endif
     apply_neumann_bconds(grid, g);
   };
 
-  const auto tau_end = detail::calc_tau_end(grid, band_width);
-  for (double tau = 0.0; tau <= tau_end; tau += dtau) {  // NOLINT
+  constexpr Index num_iter = 25;  // TODO: This only works sometimes
+  for (Index iter = 0; iter < num_iter; ++iter) {
     copy(f, f_old);
 
     // = SSP-RK3 (Shu & Osher, 1988) =============

@@ -4,6 +4,14 @@
 
 #ifdef PALE_PROFILE
 
+#include <cstdlib>
+
+namespace {
+struct CaliperDefaultConfig {
+  CaliperDefaultConfig() { setenv("CALI_CONFIG", "runtime-report", 0); }
+} caliper_default_config;
+}  // namespace
+
 #include <caliper/cali.h>
 
 #define PALE_PROFILE_FUNCTION CALI_CXX_MARK_FUNCTION

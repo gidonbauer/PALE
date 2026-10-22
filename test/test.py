@@ -334,6 +334,16 @@ def parse_args(argv: Union[List[str], None] = None) -> Tuple[argparse.Namespace,
             nargs="*",
             help="test cases to run, can match on substrings (default: all cases)"
     )
+
+    argv = list(sys.argv[1:] if argv is None else argv)
+    for i, arg in enumerate(argv):
+        if arg == "--":
+            break
+        if arg in ("-j", "--jobs") and i + 1 < len(argv):
+            try:
+                int(argv[i + 1])
+            except ValueError:
+                argv[i] = f"--jobs={os.cpu_count() or 1}"
     args = p.parse_args(argv)
     if args.jobs < 1:
         p.error("-j must be at least 1")
