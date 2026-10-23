@@ -134,7 +134,7 @@ auto main(int argc, char** argv) -> int {
     s(i, j) = 0.0;
   });
   apply_bconds(grid, s_bconds, s, t);
-  neumann_extrapolate(grid, s, ib_levelset, dsdn, band_width);
+  Index aslam_iter = neumann_extrapolate(grid, s, ib_levelset, dsdn, band_width);
 
   HDFWriter writer(output_dir, grid);
   writer.add_field("u", ui);
@@ -164,6 +164,7 @@ auto main(int argc, char** argv) -> int {
   monitor.add_variable(&div_max, "absmax(div)");
   monitor.add_variable(&mg_res, "res(MG)");
   monitor.add_variable(&mg_cycles, "cycles(MG)");
+  monitor.add_variable(&aslam_iter, "iter(Aslam)");
   monitor.write();
 
   IGOR_TIME_SCOPE("Solver")
@@ -178,7 +179,8 @@ auto main(int argc, char** argv) -> int {
     copy(u, u_old);
     copy(s, s_old);
 
-    mg_cycles = 0;
+    mg_cycles  = 0;
+    aslam_iter = 0;
     for (Index sub_iter = 0; sub_iter < 2; ++sub_iter) {
       const auto local_dt = sub_iter == 0 ? dt / 2.0 : dt;
 
@@ -221,7 +223,7 @@ auto main(int argc, char** argv) -> int {
       calc_advection_flux(grid, u, s, D, Fs);
       update_s(grid, local_dt, Fs, s_old, s);
       apply_bconds(grid, s_bconds, s, t);
-      neumann_extrapolate(grid, s, ib_levelset, dsdn, band_width);
+      aslam_iter += neumann_extrapolate(grid, s, ib_levelset, dsdn, band_width);
     }
 
     interpolate(grid, u, ui);

@@ -274,14 +274,15 @@ auto main(int argc, char** argv) -> int {
   const double band_size = band_width * std::max(grid.dx(), grid.dy());
 #endif  // POLAR_COORDINATES
 
-  IGOR_TIME_SCOPE("Extrapolation") {
+  Index num_iter = [&] {
+    Igor::ScopeTimer timer("Extrapolation");
     switch (EXTRAPOLATION_ORDER) {
-      case 0:  constant_extrapolate(grid, u, psi, band_width); break;
-      case 1:  linear_extrapolate(grid, u, psi, band_width); break;
-      case 2:  quadratic_extrapolate(grid, u, psi, band_width); break;
+      case 0:  return constant_extrapolate(grid, u, psi, band_width); break;
+      case 1:  return linear_extrapolate(grid, u, psi, band_width); break;
+      case 2:  return quadratic_extrapolate(grid, u, psi, band_width); break;
       default: Igor::Panic("Invalid order `{}`", EXTRAPOLATION_ORDER);
     }
-  }
+  }();
   writer.write(1.0);
 
   struct Err {
@@ -309,6 +310,7 @@ auto main(int argc, char** argv) -> int {
   e.L1_band /= e.vol_band;
 
   Igor::Info("{} extrapolation", order2str());
+  Igor::Info("Aslam iterations = {}", num_iter);
   Igor::Info("L1({})      = {:.12e}", N, e.L1);
   Igor::Info("L1_band({}) = {:.12e}", N, e.L1_band);
 

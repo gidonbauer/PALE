@@ -30,6 +30,26 @@ normals(const Grid<Float, LAYOUT>& grid, const Scalar<Float, LAYOUT> psi, Vector
 
 namespace detail {
 
+#ifdef PALE_ASLAM_WENO
+constexpr double ASLAM_CFL = 0.9;
+#else  // MinMod
+constexpr double ASLAM_CFL = 0.4;
+#endif
+
+template <typename Metric, typename Float, Layout LAYOUT>
+constexpr auto is_in_band(const Grid<Float, LAYOUT>& grid,
+                          const Scalar<Float, LAYOUT> psi,
+                          Float band_width,
+                          Index i,
+                          Index j) -> bool {
+  const auto x       = grid.xm(i);
+  const auto y       = grid.ym(j);
+  const auto h1      = Metric::h1(x, y);
+  const auto h2      = Metric::h2(x, y);
+  const auto in_band = psi(i, j) <= (band_width + 3) * std::max(h1 * grid.dx(), h2 * grid.dy());
+  return in_band && psi(i, j) > 0.0;
+}
+
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
 constexpr void advection_velocity(const Grid<Float, LAYOUT>& grid,
@@ -41,15 +61,9 @@ constexpr void advection_velocity(const Grid<Float, LAYOUT>& grid,
   dispatch_metric(
       grid, DISPATCH_FUNC {
         grid.foreach_i(FOREACH_FUNC {
-          const auto x  = grid.xm(i);
-          const auto y  = grid.ym(j);
-          const auto h1 = Metric::h1(x, y);
-          const auto h2 = Metric::h2(x, y);
-          const auto in_band =
-              psi(i, j) <= (band_width + 3) * std::max(h1 * grid.dx(), h2 * grid.dy());
-
-          u.x(i, j) = in_band && psi(i, j) > 0.0 ? n.x(i, j) : 0.0;
-          u.y(i, j) = in_band && psi(i, j) > 0.0 ? n.y(i, j) : 0.0;
+          const auto in_band = is_in_band<Metric>(grid, psi, band_width, i, j);
+          u.x(i, j)          = in_band ? n.x(i, j) : 0.0;
+          u.y(i, j)          = in_band ? n.y(i, j) : 0.0;
         });
       });
 }
@@ -80,11 +94,10 @@ constexpr void aslam_advection_do_step_weno(const Grid<Float, LAYOUT>& grid,
           const auto h2        = Metric::h2(x, y);
 
           // Use local timestep because we are interested in a steady-state solution
-          constexpr Float CFL = 0.9;
-          const Float dt      = CFL / (std::abs(u.x(i, j)) / (h1 * grid.dx()) +
-                                       std::abs(u.y(i, j)) / (h2 * grid.dy()));
-          f(i, j) = f_old(i, j) - dt * (u.x(i, j) * (f_plus - f_minus) / (grid.dx() * h1) +
-                                        u.y(i, j) * (g_plus - g_minus) / (grid.dy() * h2));
+          const Float dt = ASLAM_CFL / (std::abs(u.x(i, j)) / (h1 * grid.dx()) +
+                                        std::abs(u.y(i, j)) / (h2 * grid.dy()));
+          f(i, j)        = f_old(i, j) - dt * (u.x(i, j) * (f_plus - f_minus) / (grid.dx() * h1) +
+                                               u.y(i, j) * (g_plus - g_minus) / (grid.dy() * h2));
           if constexpr (!IsNone<SRC_t>) { f(i, j) += dt * src(i, j); }
         });
       });
@@ -173,11 +186,10 @@ constexpr void aslam_advection_do_step_minmod(const Grid<Float, LAYOUT>& grid,
           const auto h2 = Metric::h2(x, y);
 
           // Use local timestep because we are interested in a steady-state solution
-          constexpr Float CFL = 0.4;
-          const Float dt      = CFL / (std::abs(u.x(i, j)) / (h1 * grid.dx()) +
-                                       std::abs(u.y(i, j)) / (h2 * grid.dy()));
+          const Float dt = ASLAM_CFL / (std::abs(u.x(i, j)) / (h1 * grid.dx()) +
+                                        std::abs(u.y(i, j)) / (h2 * grid.dy()));
 
-          f(i, j)             = f_old(i, j) + dt * dfdt(i, j);
+          f(i, j)        = f_old(i, j) + dt * dfdt(i, j);
         });
       });
 }
@@ -248,12 +260,12 @@ template <typename Float,
           Layout LAYOUT,
           IsNoneOr<Vector<Float, LAYOUT>> N_t   = None,
           IsNoneOr<Scalar<Float, LAYOUT>> SRC_t = None>
-constexpr void constant_extrapolate(const Grid<Float, LAYOUT>& grid,
+constexpr auto constant_extrapolate(const Grid<Float, LAYOUT>& grid,
                                     Scalar<Float, LAYOUT> f,
                                     Scalar<Float, LAYOUT> psi,
                                     Float band_width,
                                     N_t n_in  = None{},
-                                    SRC_t src = None{}) {
+                                    SRC_t src = None{}) -> Index {
   PALE_PROFILE_FUNCTION;
 
   auto n = IF_NONE_ELSE(N_t, grid.alloc_vector(), n_in);
@@ -320,11 +332,20 @@ constexpr void constant_extrapolate(const Grid<Float, LAYOUT>& grid,
     apply_neumann_bconds(grid, g);
   };
 
-  constexpr Index num_iter = 25;  // TODO: This only works sometimes
-  for (Index iter = 0; iter < num_iter; ++iter) {
+  // Iterate to the steady state; stop once the largest change per pseudo time step is small
+  // compared to the values in the fluid and the band
+  constexpr Index max_iter = 1000;
+  constexpr Float rtol     = 1e-4;
+  struct Change {
+    Float max_change;
+    Float max_abs;
+  };
+
+  Index iter;
+  for (iter = 0; iter < max_iter; ++iter) {
     copy(f, f_old);
 
-    // = SSP-RK3 (Shu & Osher, 1988) =============
+    // = SSP-RK3 (Shu & Osher, 1988) =======================
     // = First stage ====
     euler_step(f);
 
@@ -337,16 +358,35 @@ constexpr void constant_extrapolate(const Grid<Float, LAYOUT>& grid,
     euler_step(f);
     grid.foreach_i(FOREACH_FUNC { f(i, j) = f_old(i, j) / 3.0 + 2.0 / 3.0 * f(i, j); });
     apply_neumann_bconds(grid, f);
+
+    // = Calculate max. change for stopping criterion ======
+    const auto change = grid.transform_reduce_i(
+        Change{.max_change = 0.0, .max_abs = 0.0},
+        FOREACH_FUNC {
+          if (psi(i, j) > 0.0 && u.x(i, j) == 0.0 && u.y(i, j) == 0.0) { return Change{}; }
+          return Change{
+              .max_change = std::abs(f(i, j) - f_old(i, j)),
+              .max_abs    = std::abs(f(i, j)),
+          };
+        },
+        [](Change lhs, const Change& rhs) {
+          return Change{
+              .max_change = std::max(lhs.max_change, rhs.max_change),
+              .max_abs    = std::max(lhs.max_abs, rhs.max_abs),
+          };
+        });
+    if (change.max_change <= rtol * change.max_abs) { break; }
   }
+  return iter;
 }
 
 // =================================================================================================
 template <typename Float, Layout LAYOUT, IsNoneOr<Vector<Float, LAYOUT>> N_t = None>
-constexpr void linear_extrapolate(const Grid<Float, LAYOUT>& grid,
+constexpr auto linear_extrapolate(const Grid<Float, LAYOUT>& grid,
                                   Scalar<Float, LAYOUT> f,
                                   Scalar<Float, LAYOUT> psi,
                                   Float band_width,
-                                  N_t n_in = None{}) {
+                                  N_t n_in = None{}) -> Index {
   PALE_PROFILE_FUNCTION;
 
   auto n = IF_NONE_ELSE(N_t, grid.alloc_vector(), n_in);
@@ -358,19 +398,20 @@ constexpr void linear_extrapolate(const Grid<Float, LAYOUT>& grid,
   IGOR_DEFER(grid.free(un););
   detail::calc_un(grid, n, f, psi, un);
 
-  constant_extrapolate(grid, un, psi, band_width, n, None{});
+  Index num_iter = constant_extrapolate(grid, un, psi, band_width, n, None{});
   grid.foreach_i(FOREACH_FUNC { un(i, j) = psi(i, j) > 0.0 ? un(i, j) : 0.0; });
 
-  constant_extrapolate(grid, f, psi, band_width, n, un);
+  num_iter += constant_extrapolate(grid, f, psi, band_width, n, un);
+  return num_iter;
 }
 
 // =================================================================================================
 template <typename Float, Layout LAYOUT, IsNoneOr<Vector<Float, LAYOUT>> N_t = None>
-constexpr void quadratic_extrapolate(const Grid<Float, LAYOUT>& grid,
+constexpr auto quadratic_extrapolate(const Grid<Float, LAYOUT>& grid,
                                      Scalar<Float, LAYOUT> f,
                                      Scalar<Float, LAYOUT> psi,
                                      Float band_width,
-                                     N_t n_in = None{}) {
+                                     N_t n_in = None{}) -> Index {
   PALE_PROFILE_FUNCTION;
 
   auto n = IF_NONE_ELSE(N_t, grid.alloc_vector(), n_in);
@@ -382,10 +423,11 @@ constexpr void quadratic_extrapolate(const Grid<Float, LAYOUT>& grid,
   IGOR_DEFER(grid.free(un););
   detail::calc_un(grid, n, f, psi, un);
 
-  linear_extrapolate(grid, un, psi, band_width, n);
+  Index num_iter = linear_extrapolate(grid, un, psi, band_width, n);
   grid.foreach_i(FOREACH_FUNC { un(i, j) = psi(i, j) > 0.0 ? un(i, j) : 0.0; });
 
-  constant_extrapolate(grid, f, psi, band_width, n, un);
+  num_iter += constant_extrapolate(grid, f, psi, band_width, n, un);
+  return num_iter;
 }
 
 // =================================================================================================
@@ -394,12 +436,12 @@ template <Index ORDER = 1,
           Layout LAYOUT,
           IsNoneOr<Vector<Float, LAYOUT>> N_t   = None,
           IsNoneOr<Scalar<Float, LAYOUT>> SRC_t = None>
-constexpr void neumann_extrapolate(const Grid<Float, LAYOUT>& grid,
+constexpr auto neumann_extrapolate(const Grid<Float, LAYOUT>& grid,
                                    Scalar<Float, LAYOUT> f,
                                    Scalar<Float, LAYOUT> psi,
                                    Float dfdn,
                                    Float band_width,
-                                   N_t n_in = None{}) {
+                                   N_t n_in = None{}) -> Index {
   PALE_PROFILE_FUNCTION;
 
   static_assert(ORDER == 1 || ORDER == 2,
@@ -410,7 +452,7 @@ constexpr void neumann_extrapolate(const Grid<Float, LAYOUT>& grid,
     IGOR_DEFER(grid.free(fn););
     grid.foreach_i(FOREACH_FUNC { fn(i, j) = psi(i, j) > 0.0 ? dfdn : 0.0; });
 
-    constant_extrapolate(grid, f, psi, band_width, n_in, fn);
+    return constant_extrapolate(grid, f, psi, band_width, n_in, fn);
   } else {
     auto n = IF_NONE_ELSE(N_t, grid.alloc_vector(), n_in);
     IGOR_DEFER(if constexpr (IsNone<N_t>) { grid.free(n); });
@@ -424,11 +466,12 @@ constexpr void neumann_extrapolate(const Grid<Float, LAYOUT>& grid,
     // Calculate fnn=n dot grad(n dot grad(f)) in the liquid and extrapolate constant
     detail::calc_un(grid, n, f, psi, fn);
     detail::calc_un(grid, n, fn, psi, fnn);
-    constant_extrapolate(grid, fnn, psi, band_width, n, None{});
+    Index num_iter = constant_extrapolate(grid, fnn, psi, band_width, n, None{});
 
     // Calculate fn=dfdn + d*fnn. This works because fnn is constant along the normal
     grid.foreach_i(
         FOREACH_FUNC { fn(i, j) = psi(i, j) > 0.0 ? dfdn + fnn(i, j) * psi(i, j) : 0.0; });
-    constant_extrapolate(grid, f, psi, band_width, n, fn);
+    num_iter += constant_extrapolate(grid, f, psi, band_width, n, fn);
+    return num_iter;
   }
 }
