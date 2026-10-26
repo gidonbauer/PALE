@@ -9,6 +9,7 @@ template <typename Float, Layout LAYOUT>
 constexpr void interpolate(const Grid<Float, LAYOUT>& grid,
                            const FaceVector<Float, LAYOUT> uf,
                            Vector<Float, LAYOUT> ui) {
+  PALE_PROFILE_FUNCTION;
   grid.foreach_i(FOREACH_FUNC {
     ui.x(i, j) = (uf.right(i, j) + uf.left(i, j)) / 2.0;
     ui.y(i, j) = (uf.top(i, j) + uf.bottom(i, j)) / 2.0;
@@ -28,6 +29,8 @@ struct Stats {
 template <typename Float, Layout LAYOUT>
 constexpr auto stats(const Grid<Float, LAYOUT>& grid, const Scalar<Float, LAYOUT> f)
     -> Stats<Float> {
+  PALE_PROFILE_FUNCTION;
+
   Stats s = grid.transform_reduce_i(
       Stats<Float>{
           .min    = std::numeric_limits<Float>::max(),
@@ -59,10 +62,18 @@ constexpr auto stats(const Grid<Float, LAYOUT>& grid, const Scalar<Float, LAYOUT
   return s;
 }
 
-template <typename Float, Layout LAYOUT>
+template <typename FUNC, typename Float>
+concept IsMetricFunc = requires(FUNC f) {
+  { f(std::declval<Index>(), std::declval<Index>()) } -> std::convertible_to<Float>;
+};
+
+template <typename Float, Layout LAYOUT, typename METRIC_t>
+requires(IsScalar<METRIC_t, Float, LAYOUT> || IsMetricFunc<METRIC_t, Float>)
 constexpr auto stats(const Grid<Float, LAYOUT>& grid,
                      const Scalar<Float, LAYOUT> f,
-                     const Scalar<Float, LAYOUT> metric) -> Stats<Float> {
+                     const METRIC_t metric) -> Stats<Float> {
+  PALE_PROFILE_FUNCTION;
+
   Stats s = grid.transform_reduce_i(
       Stats<Float>{
           .min    = std::numeric_limits<Float>::max(),
@@ -73,8 +84,8 @@ constexpr auto stats(const Grid<Float, LAYOUT>& grid,
       },
       FOREACH_FUNC->Stats<Float> {
         return Stats<Float>{
-            .min    = f(i, j),
-            .max    = f(i, j),
+            .min    = metric(i, j) * f(i, j),
+            .max    = metric(i, j) * f(i, j),
             .sum    = metric(i, j) * grid.dv(i, j) * f(i, j),
             .stddev = metric(i, j) * grid.dv(i, j) * Igor::sqr(f(i, j)),
             .volume = metric(i, j) * grid.dv(i, j),

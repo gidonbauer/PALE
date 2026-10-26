@@ -7,6 +7,7 @@
 #include <Igor/Math.hpp>
 #include <Igor/Timer.hpp>
 
+#define PALE_ASLAM_WENO
 #include "Advection-Diffusion.hpp"
 #include "AslamExtrapolation.hpp"
 #include "BoundaryConditions.hpp"
@@ -34,7 +35,7 @@ constexpr Float D        = 1e-3;
 
 constexpr Float CFL      = 0.7;
 constexpr Float tend     = 0.6;
-constexpr Float dt_write = 0.001;
+constexpr Float dt_write = tend / 100.0;
 
 constexpr Circle<Float> wall{.x = 0.5, .y = 0.5, .r = 0.125};
 
@@ -48,6 +49,7 @@ constexpr auto inlet_u(Float y) -> Float {
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
 void correct_outflow(const Grid<Float, LAYOUT>& grid, FaceVector<Float, LAYOUT> u) {
+  PALE_PROFILE_FUNCTION;
   // Rescale the outflow so that it matches the inflow exactly (global continuity).
   Float Qin  = 0.0;
   Float Qout = 0.0;
@@ -204,6 +206,8 @@ constexpr void update_s_ib_semi_analytical(const Grid<Float, LAYOUT>& grid,
 
 // =================================================================================================
 auto main(int argc, char** argv) -> int {
+  PALE_PROFILE_FUNCTION;
+
   const auto usage_str = Igor::detail::format("Usage: {} <grid size>", argv[0]);
   if (argc < 2) {
     Igor::Error("{}", usage_str);
@@ -247,7 +251,7 @@ auto main(int argc, char** argv) -> int {
   Float dt          = 0.0;
   Float t           = 0.0;
 
-  grid.foreach_i(FOREACH_FUNC {
+  grid.foreach_a(FOREACH_FUNC {
     const auto x      = grid.xm(i);
     const auto y      = grid.ym(j);
     ib_levelset(i, j) = wall.levelset(x, y);
@@ -365,7 +369,7 @@ auto main(int argc, char** argv) -> int {
 
       // 1) Predictor
       calc_mom_flux(grid, u, p, rho, mu, FUX, FUY, FVX, FVY);
-#if 1
+#if 0
       update_u(grid, local_dt, FUX, FUY, FVX, FVY, u_old, u);
       correct_velocity_ib_implicit_euler(grid, ib_corr_face, rho, mu, local_dt, u);
 #else
@@ -390,42 +394,20 @@ auto main(int argc, char** argv) -> int {
       // 2) Pressure correction
       calc_div(grid, u, div);
       grid.foreach_i(FOREACH_FUNC { div(i, j) *= rho / local_dt; });
+      PALE_PROFILE_BEGIN("poisson");
       solver.execute(dp.data(), div.data(), ngs.data(), ngs.data());
+      PALE_PROFILE_END("poisson");
       apply_neumann_bconds(grid, dp);
 
       // 3) Project
       correct_velocity(grid, dp, rho, local_dt, u, p);
 
       // 4) Update scalar
-#if 0
-      calc_advection_flux(grid, u, s, D, FS);
-#if 1
-      update_s(grid, local_dt, FS, s_old, s);
-      correct_scalar_ib_implicit_euler(grid, ib_corr_center, D, local_dt, s);
-#else
-      update_s_ib_semi_analytical(grid,
-                                  local_dt,
-                                  None{},
-                                  None{},
-                                  FUX,
-                                  FUY,
-                                  FVX,
-                                  FVY,
-                                  None{},
-                                  mu,
-                                  rho,
-                                  ib_corr_center,
-                                  u_old,
-                                  u);
-#endif
-      apply_bconds(grid, s_bconds, s, t);
-#else
-      const auto band_size = 4.0 * 6.0 * std::max(grid.dx(), grid.dy());
-      neumann_extrapolate<false>(grid, s, ib_levelset, ib_dsdn, band_size);
+      const auto band_width = 3.0;
+      neumann_extrapolate<1>(grid, s, ib_levelset, ib_dsdn, band_width);
       calc_advection_flux(grid, u, s, D, FS);
       update_s(grid, local_dt, FS, s_old, s);
       apply_bconds(grid, s_bconds, s, t);
-#endif
     }
 
     interpolate(grid, u, ui);

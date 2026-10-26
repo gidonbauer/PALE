@@ -72,6 +72,15 @@ bin/test/Aslam-Linear: test/AslamExtrapolation.cpp ${HEADERS} | bin/test test/ou
 bin/test/Aslam-Quadratic: test/AslamExtrapolation.cpp ${HEADERS} | bin/test test/output
 	${CXX} ${CXX_FLAGS} ${CXX_INC} -DEXTRAPOLATION_ORDER=2 -o $@ $< ${CXX_LIB}
 
+bin/test/Aslam-Polar-Constant: test/AslamExtrapolation.cpp ${HEADERS} | bin/test test/output
+	${CXX} ${CXX_FLAGS} ${CXX_INC} -DPOLAR_COORDINATES=1 -DEXTRAPOLATION_ORDER=0 -o $@ $< ${CXX_LIB}
+
+bin/test/Aslam-Polar-Linear: test/AslamExtrapolation.cpp ${HEADERS} | bin/test test/output
+	${CXX} ${CXX_FLAGS} ${CXX_INC} -DPOLAR_COORDINATES=1 -DEXTRAPOLATION_ORDER=1 -o $@ $< ${CXX_LIB}
+
+bin/test/Aslam-Polar-Quadratic: test/AslamExtrapolation.cpp ${HEADERS} | bin/test test/output
+	${CXX} ${CXX_FLAGS} ${CXX_INC} -DPOLAR_COORDINATES=1 -DEXTRAPOLATION_ORDER=2 -o $@ $< ${CXX_LIB}
+
 test/output bin/test: %:
 	mkdir -p $@
 

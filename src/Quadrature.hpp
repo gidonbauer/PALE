@@ -5,11 +5,13 @@
 
 #include <Igor/Math.hpp>
 
+#include "Profile.hpp"
 #include "QuadratureTables.hpp"
 
 // -------------------------------------------------------------------------------------------------
 template <size_t N = 16UZ, typename FUNC, typename Float>
 [[nodiscard]] constexpr auto quadrature(FUNC f, Float x_min, Float x_max) noexcept -> Float {
+  PALE_PROFILE_FUNCTION;
   static_assert(N > 0UZ && N <= detail::MAX_QUAD_N);
 
   constexpr auto& gauss_points  = detail::gauss_points_table<Float>[N - 1UZ];
@@ -36,6 +38,7 @@ template <size_t N = 16UZ, typename FUNC, typename Float>
 template <size_t N = 16UZ, typename FUNC, typename Float>
 [[nodiscard]] constexpr auto
 quadrature(FUNC f, Float x_min, Float x_max, Float y_min, Float y_max) noexcept -> Float {
+  PALE_PROFILE_FUNCTION;
   static_assert(N > 0UZ && N <= detail::MAX_QUAD_N);
 
   constexpr auto& gauss_points  = detail::gauss_points_table<Float>[N - 1UZ];
@@ -67,6 +70,7 @@ quadrature(FUNC f, Float x_min, Float x_max, Float y_min, Float y_max) noexcept 
 // - Midpoint rule to integrate a function in 1D ---------------------------------------------------
 template <typename Float>
 [[nodiscard]] constexpr auto midpoint_rule(std::span<Float> f, Float dx) noexcept -> Float {
+  PALE_PROFILE_FUNCTION;
   return std::reduce(f.data(), f.data() + f.size(), static_cast<Float>(0)) * dx;
 }
 
@@ -74,6 +78,7 @@ template <typename Float>
 template <typename Float>
 [[nodiscard]] constexpr auto trapezoidal_rule(std::span<Float> f, std::span<Float> x) noexcept
     -> Float {
+  PALE_PROFILE_FUNCTION;
   IGOR_ASSERT(f.size() == x.size(),
               "f and x must have the same size, but f.size() = {} and x.size() = {}",
               f.size(),
@@ -92,6 +97,7 @@ template <typename Float>
 template <typename Float>
 [[nodiscard]] constexpr auto simpsons_rule(std::span<Float> f, Float x_min, Float x_max) noexcept
     -> Float {
+  PALE_PROFILE_FUNCTION;
   const auto N = f.size();
   IGOR_ASSERT(N > 0 && N % 2 == 1, "f.size() must be an odd number larger than zero but is {}", N);
   Float res = 0;
@@ -105,6 +111,7 @@ template <typename Float>
 // - Simpson's rule to integrate a function in 1D --------------------------------------------------
 template <std::floating_point Float>
 [[nodiscard]] constexpr auto simpson(std::span<const Float> y, std::span<const Float> x) -> Float {
+  PALE_PROFILE_FUNCTION;
   if (y.size() != x.size()) {
     Igor::Panic("`y` and `x` must have the same size, but sizes are {} and {}", y.size(), x.size());
   }

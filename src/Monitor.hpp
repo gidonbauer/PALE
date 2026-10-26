@@ -61,6 +61,7 @@ class Monitor {
   }
 
   void write() {
+    PALE_PROFILE_SCOPE("Monitor.write");
     if (m_names.empty()) { return; }
     if (!m_wrote_header) { write_header(); }
 

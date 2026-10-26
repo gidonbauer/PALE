@@ -92,3 +92,28 @@ struct Rect {
     return std::min(d_x, d_y);
   }
 };
+
+// -------------------------------------------------------------------------------------------------
+template <typename Float>
+struct HalfPlane {
+  // Point on the line
+  Float x, y;
+  // Normal of the line, points into the solid; does not need to be normalized
+  Float nx, ny;
+
+  [[nodiscard]] constexpr auto contains(Float x_, Float y_) const noexcept -> bool {
+    return contains({.x = x_, .y = y_});
+  }
+  [[nodiscard]] constexpr auto contains(const Vec2<Float>& p) const noexcept -> bool {
+    return (p.x - x) * nx + (p.y - y) * ny >= 0.0;
+  }
+
+  [[nodiscard]] constexpr auto levelset(Float x_, Float y_) const noexcept -> Float {
+    return levelset({.x = x_, .y = y_});
+  }
+  [[nodiscard]] constexpr auto levelset(Vec2<Float> p) const noexcept -> Float {
+    const auto n_norm = std::sqrt(Igor::sqr(nx) + Igor::sqr(ny));
+    IGOR_ASSERT(n_norm > 0.0, "Expected non-zero normal vector, got ({}, {}).", nx, ny);
+    return ((p.x - x) * nx + (p.y - y) * ny) / n_norm;
+  }
+};

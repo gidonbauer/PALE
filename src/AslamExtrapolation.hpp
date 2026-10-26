@@ -2,58 +2,196 @@
 
 #include <Igor/Defer.hpp>
 
+#include "BoundaryConditions.hpp"
 #include "Grid.hpp"
+#ifdef PALE_ASLAM_WENO
 #include "WENO5.hpp"
+#endif  // ALE_ASLAM_WENO
 
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
 constexpr void
 normals(const Grid<Float, LAYOUT>& grid, const Scalar<Float, LAYOUT> psi, Vector<Float, LAYOUT> n) {
-  grid.foreach_i(FOREACH_FUNC {
-    const auto grad_psi = normalize(Vec2<Float>{
-        .x = (psi(i + 1, j) - psi(i - 1, j)) / (2.0 * grid.dx()),
-        .y = (psi(i, j + 1) - psi(i, j - 1)) / (2.0 * grid.dy()),
-    });
-    n.x(i, j)           = grad_psi.x;
-    n.y(i, j)           = grad_psi.y;
-  });
+  PALE_PROFILE_FUNCTION;
+  dispatch_metric(
+      grid, DISPATCH_FUNC {
+        grid.foreach_i(FOREACH_FUNC {
+          const auto x        = grid.xm(i);
+          const auto y        = grid.ym(j);
+          const auto grad_psi = normalize(Vec2<Float>{
+              .x = (psi(i + 1, j) - psi(i - 1, j)) / (2.0 * grid.dx() * Metric::h1(x, y)),
+              .y = (psi(i, j + 1) - psi(i, j - 1)) / (2.0 * grid.dy() * Metric::h2(x, y)),
+          });
+          n.x(i, j)           = grad_psi.x;
+          n.y(i, j)           = grad_psi.y;
+        });
+      });
 }
 
 namespace detail {
+
+#ifdef PALE_ASLAM_WENO
+constexpr double ASLAM_CFL = 0.9;
+#else  // MinMod
+constexpr double ASLAM_CFL = 0.4;
+#endif
+
+template <typename Metric, typename Float, Layout LAYOUT>
+constexpr auto is_in_band(const Grid<Float, LAYOUT>& grid,
+                          const Scalar<Float, LAYOUT> psi,
+                          Float band_width,
+                          Index i,
+                          Index j) -> bool {
+  const auto x       = grid.xm(i);
+  const auto y       = grid.ym(j);
+  const auto h1      = Metric::h1(x, y);
+  const auto h2      = Metric::h2(x, y);
+  const auto in_band = psi(i, j) <= (band_width + 3) * std::max(h1 * grid.dx(), h2 * grid.dy());
+  return in_band && psi(i, j) > 0.0;
+}
 
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
 constexpr void advection_velocity(const Grid<Float, LAYOUT>& grid,
                                   const Scalar<Float, LAYOUT> psi,
+                                  Float band_width,
                                   const Vector<Float, LAYOUT> n,
                                   Vector<Float, LAYOUT> u) {
   // u = H(psi)*n; where H(x) is the Heavyside function
-  grid.foreach_i(FOREACH_FUNC {
-    u.x(i, j) = psi(i, j) > 0.0 ? n.x(i, j) : 0.0;
-    u.y(i, j) = psi(i, j) > 0.0 ? n.y(i, j) : 0.0;
-  });
+  dispatch_metric(
+      grid, DISPATCH_FUNC {
+        grid.foreach_i(FOREACH_FUNC {
+          const auto in_band = is_in_band<Metric>(grid, psi, band_width, i, j);
+          u.x(i, j)          = in_band ? n.x(i, j) : 0.0;
+          u.y(i, j)          = in_band ? n.y(i, j) : 0.0;
+        });
+      });
 }
 
 // =================================================================================================
 template <typename Float, Layout LAYOUT, IsNoneOr<Scalar<Float, LAYOUT>> SRC_t>
-constexpr void aslam_advection_do_step(const Grid<Float, LAYOUT>& grid,
-                                       Float dt,
-                                       const Scalar<Float, LAYOUT> f_old,
-                                       const Vector<Float, LAYOUT> u,
-                                       const FaceVector<Float, LAYOUT> fL,
-                                       const FaceVector<Float, LAYOUT> fR,
-                                       const SRC_t src,
-                                       Scalar<Float, LAYOUT> f) {
-  grid.foreach_i(FOREACH_FUNC {
-    const double f_minus = u.x(i, j) >= 0.0 ? fL.x(i, j) : fR.x(i, j);
-    const double f_plus  = u.x(i, j) >= 0.0 ? fL.x(i + 1, j) : fR.x(i + 1, j);
-    const double g_minus = u.y(i, j) >= 0.0 ? fL.y(i, j) : fR.y(i, j);
-    const double g_plus  = u.y(i, j) >= 0.0 ? fL.y(i, j + 1) : fR.y(i, j + 1);
+constexpr void aslam_advection_do_step_weno(const Grid<Float, LAYOUT>& grid,
+                                            const Scalar<Float, LAYOUT> f_old,
+                                            const Vector<Float, LAYOUT> u,
+                                            const FaceVector<Float, LAYOUT> fL,
+                                            const FaceVector<Float, LAYOUT> fR,
+                                            const SRC_t src,
+                                            Scalar<Float, LAYOUT> f) {
+  PALE_PROFILE_FUNCTION;
+  dispatch_metric(
+      grid, DISPATCH_FUNC {
+        grid.foreach_i(FOREACH_FUNC {
+          if (u.x(i, j) == 0.0 && u.y(i, j) == 0.0) { return; }
 
-    f(i, j)              = f_old(i, j) - dt * (u.x(i, j) * (f_plus - f_minus) / grid.dx() +
-                                               u.y(i, j) * (g_plus - g_minus) / grid.dy());
-    if constexpr (!IsNone<SRC_t>) { f(i, j) += dt * src(i, j); }
-  });
+          const double f_minus = u.x(i, j) >= 0.0 ? fL.x(i, j) : fR.x(i, j);
+          const double f_plus  = u.x(i, j) >= 0.0 ? fL.x(i + 1, j) : fR.x(i + 1, j);
+          const double g_minus = u.y(i, j) >= 0.0 ? fL.y(i, j) : fR.y(i, j);
+          const double g_plus  = u.y(i, j) >= 0.0 ? fL.y(i, j + 1) : fR.y(i, j + 1);
+
+          const auto x         = grid.xm(i);
+          const auto y         = grid.ym(j);
+          const auto h1        = Metric::h1(x, y);
+          const auto h2        = Metric::h2(x, y);
+
+          // Use local timestep because we are interested in a steady-state solution
+          const Float dt = ASLAM_CFL / (std::abs(u.x(i, j)) / (h1 * grid.dx()) +
+                                        std::abs(u.y(i, j)) / (h2 * grid.dy()));
+          f(i, j)        = f_old(i, j) - dt * (u.x(i, j) * (f_plus - f_minus) / (grid.dx() * h1) +
+                                               u.y(i, j) * (g_plus - g_minus) / (grid.dy() * h2));
+          if constexpr (!IsNone<SRC_t>) { f(i, j) += dt * src(i, j); }
+        });
+      });
+}
+
+// =================================================================================================
+template <typename Float, Layout LAYOUT, IsNoneOr<Scalar<Float, LAYOUT>> SRC_t>
+constexpr void aslam_advection_do_step_minmod(const Grid<Float, LAYOUT>& grid,
+                                              const Scalar<Float, LAYOUT> f_old,
+                                              const Vector<Float, LAYOUT> u,
+                                              const SRC_t src,
+                                              Scalar<Float, LAYOUT> dfdt,
+                                              Scalar<Float, LAYOUT> f) {
+  PALE_PROFILE_FUNCTION;
+  IGOR_ASSERT(grid.nghost() >= 2,
+              "MinMod advection requires at least 2 ghost cells but got only {}",
+              grid.nghost());
+
+  auto aslam_minmod = [](double a, double b) {
+    if (a * b <= 0.0) { return 0.0; }
+    return std::abs(a) < std::abs(b) ? a : b;
+  };
+
+  dispatch_metric(
+      grid, DISPATCH_FUNC {
+        grid.foreach_i(FOREACH_FUNC {
+          if (u.x(i, j) == 0.0 && u.y(i, j) == 0.0) { return; }
+
+          const auto x = grid.xm(i);
+          const auto y = grid.ym(j);
+          // physical cell size
+          const auto hx = grid.dx() * Metric::h1(x, y);
+          const auto hy = grid.dy() * Metric::h2(x, y);
+
+          dfdt(i, j)    = 0.0;
+          // x-direction
+          {
+            // first differences
+            const auto Dm = (f(i, j) - f(i - 1, j)) / hx;  // backward
+            const auto Dp = (f(i + 1, j) - f(i, j)) / hx;  // forward
+
+            // second differences (undivided) for the limiter
+            const auto c_m = f(i, j) - 2.0 * f(i - 1, j) + f(i - 2, j);  // curvature left of i
+            const auto c_c = f(i + 1, j) - 2.0 * f(i, j) + f(i - 1, j);  // curvature at i
+            const auto c_p = f(i + 2, j) - 2.0 * f(i + 1, j) + f(i, j);  // curvature right of i
+
+            // one-sided 2nd-order derivatives with MinMod curvature correction
+            const auto fx_minus  = Dm + 0.5 * aslam_minmod(c_m, c_c) / hx;
+            const auto fx_plus   = Dp - 0.5 * aslam_minmod(c_c, c_p) / hx;
+
+            const auto fx        = u.x(i, j) >= 0.0 ? fx_minus : fx_plus;
+            dfdt(i, j)          -= u.x(i, j) * fx;
+          }
+
+          // y-direction
+          {
+            // first differences
+            const auto Dm = (f(i, j) - f(i, j - 1)) / hy;  // backward
+            const auto Dp = (f(i, j + 1) - f(i, j)) / hy;  // forward
+
+            // second differences (undivided) for the limiter
+            const auto c_m = f(i, j) - 2.0 * f(i, j - 1) + f(i, j - 2);  // curvature left of i
+            const auto c_c = f(i, j + 1) - 2.0 * f(i, j) + f(i, j - 1);  // curvature at i
+            const auto c_p = f(i, j + 2) - 2.0 * f(i, j + 1) + f(i, j);  // curvature right of i
+
+            // one-sided 2nd-order derivatives with MinMod curvature correction
+            const auto fy_minus  = Dm + 0.5 * aslam_minmod(c_m, c_c) / hy;
+            const auto fy_plus   = Dp - 0.5 * aslam_minmod(c_c, c_p) / hy;
+
+            const auto fy        = u.y(i, j) >= 0.0 ? fy_minus : fy_plus;
+            dfdt(i, j)          -= u.y(i, j) * fy;
+          }
+
+          if constexpr (!IsNone<SRC_t>) { dfdt(i, j) += src(i, j); }
+        });
+      });
+
+  dispatch_metric(
+      grid, DISPATCH_FUNC {
+        grid.foreach_i(FOREACH_FUNC {
+          if (u.x(i, j) == 0.0 && u.y(i, j) == 0.0) { return; }
+
+          const auto x  = grid.xm(i);
+          const auto y  = grid.ym(j);
+          const auto h1 = Metric::h1(x, y);
+          const auto h2 = Metric::h2(x, y);
+
+          // Use local timestep because we are interested in a steady-state solution
+          const Float dt = ASLAM_CFL / (std::abs(u.x(i, j)) / (h1 * grid.dx()) +
+                                        std::abs(u.y(i, j)) / (h2 * grid.dy()));
+
+          f(i, j)        = f_old(i, j) + dt * dfdt(i, j);
+        });
+      });
 }
 
 // =================================================================================================
@@ -63,48 +201,56 @@ constexpr void calc_un(const Grid<Float, LAYOUT>& grid,
                        const Scalar<Float, LAYOUT> u,
                        const Scalar<Float, LAYOUT> psi,
                        Scalar<Float, LAYOUT> un) {
-  grid.foreach_i(FOREACH_FUNC {
-    un(i, j) = 0.0;
-    if (psi(i, j) <= 0.0) {
-      // x-direction
-      {
-        if (psi(i + 1, j) <= 0.0 && psi(i - 1, j) <= 0.0) {
-          // Central: -1/2 0 1/2
-          un(i, j) += n.x(i, j) * (u(i + 1, j) - u(i - 1, j)) / (2.0 * grid.dx());
-        } else if (psi(i + 1, j) <= 0.0 && psi(i + 2, j) <= 0.0) {
-          // Forwards: −3/2 4/2 −1/2
-          un(i, j) +=
-              n.x(i, j) * (-3.0 * u(i, j) + 4.0 * u(i + 1, j) - u(i + 2, j)) / (2.0 * grid.dx());
-        } else if (psi(i - 2, j) <= 0.0 && psi(i - 1, j) <= 0.0) {
-          // Backwards: 1/2 −4/2 3/2
-          un(i, j) +=
-              n.x(i, j) * (u(i - 2, j) - 4.0 * u(i - 1, j) + 3.0 * u(i, j)) / (2.0 * grid.dx());
-        } else {
-          Igor::Panic(
-              "Neither central, forwards, or backwards finite differences are possible, what now?");
-        }
-      }
+  dispatch_metric(
+      grid, DISPATCH_FUNC {
+        grid.foreach_i(FOREACH_FUNC {
+          un(i, j) = 0.0;
+          if (psi(i, j) <= 0.0) {
+            const auto x = grid.xm(i);
+            const auto y = grid.ym(j);
 
-      // y-direction
-      {
-        if (psi(i, j + 1) <= 0.0 && psi(i, j - 1) <= 0.0) {
-          // Central: -1/2 0 1/2
-          un(i, j) += n.y(i, j) * (u(i, j + 1) - u(i, j - 1)) / (2.0 * grid.dy());
-        } else if (psi(i, j + 1) <= 0.0 && psi(i, j + 2) <= 0.0) {
-          // Forwards: −3/2 4/2 −1/2
-          un(i, j) +=
-              n.y(i, j) * (-3.0 * u(i, j) + 4.0 * u(i, j + 1) - u(i, j + 2)) / (2.0 * grid.dy());
-        } else if (psi(i, j - 2) <= 0.0 && psi(i, j - 1) <= 0.0) {
-          // Backwards: 1/2 −4/2 3/2
-          un(i, j) +=
-              n.y(i, j) * (u(i, j - 2) - 4.0 * u(i, j - 1) + 3.0 * u(i, j)) / (2.0 * grid.dy());
-        } else {
-          Igor::Panic(
-              "Neither central, forwards, or backwards finite differences are possible, what now?");
-        }
-      }
-    }
-  });
+            // x-direction
+            {
+              if (psi(i + 1, j) <= 0.0 && psi(i - 1, j) <= 0.0) {
+                // Central: -1/2 0 1/2
+                un(i, j) +=
+                    n.x(i, j) * (u(i + 1, j) - u(i - 1, j)) / (2.0 * grid.dx() * Metric::h1(x, y));
+              } else if (psi(i + 1, j) <= 0.0 && psi(i + 2, j) <= 0.0) {
+                // Forwards: −3/2 4/2 −1/2
+                un(i, j) += n.x(i, j) * (-3.0 * u(i, j) + 4.0 * u(i + 1, j) - u(i + 2, j)) /
+                            (2.0 * grid.dx() * Metric::h1(x, y));
+              } else if (psi(i - 2, j) <= 0.0 && psi(i - 1, j) <= 0.0) {
+                // Backwards: 1/2 −4/2 3/2
+                un(i, j) += n.x(i, j) * (u(i - 2, j) - 4.0 * u(i - 1, j) + 3.0 * u(i, j)) /
+                            (2.0 * grid.dx() * Metric::h1(x, y));
+              } else {
+                Igor::Panic("Neither central, forwards, or backwards finite differences are "
+                            "possible, what now?");
+              }
+            }
+
+            // y-direction
+            {
+              if (psi(i, j + 1) <= 0.0 && psi(i, j - 1) <= 0.0) {
+                // Central: -1/2 0 1/2
+                un(i, j) +=
+                    n.y(i, j) * (u(i, j + 1) - u(i, j - 1)) / (2.0 * grid.dy() * Metric::h2(x, y));
+              } else if (psi(i, j + 1) <= 0.0 && psi(i, j + 2) <= 0.0) {
+                // Forwards: −3/2 4/2 −1/2
+                un(i, j) += n.y(i, j) * (-3.0 * u(i, j) + 4.0 * u(i, j + 1) - u(i, j + 2)) /
+                            (2.0 * grid.dy() * Metric::h2(x, y));
+              } else if (psi(i, j - 2) <= 0.0 && psi(i, j - 1) <= 0.0) {
+                // Backwards: 1/2 −4/2 3/2
+                un(i, j) += n.y(i, j) * (u(i, j - 2) - 4.0 * u(i, j - 1) + 3.0 * u(i, j)) /
+                            (2.0 * grid.dy() * Metric::h2(x, y));
+              } else {
+                Igor::Panic("Neither central, forwards, or backwards finite differences are "
+                            "possible, what now?");
+              }
+            }
+          }
+        });
+      });
 }
 
 }  // namespace detail
@@ -114,51 +260,135 @@ template <typename Float,
           Layout LAYOUT,
           IsNoneOr<Vector<Float, LAYOUT>> N_t   = None,
           IsNoneOr<Scalar<Float, LAYOUT>> SRC_t = None>
-constexpr void constant_extrapolate(const Grid<Float, LAYOUT>& grid,
+constexpr auto constant_extrapolate(const Grid<Float, LAYOUT>& grid,
                                     Scalar<Float, LAYOUT> f,
                                     Scalar<Float, LAYOUT> psi,
-                                    Float tau_end = 0.1,
-                                    N_t n_in      = None{},
-                                    SRC_t src     = None{}) {
+                                    Float band_width,
+                                    N_t n_in  = None{},
+                                    SRC_t src = None{}) -> Index {
+  PALE_PROFILE_FUNCTION;
+
   auto n = IF_NONE_ELSE(N_t, grid.alloc_vector(), n_in);
   IGOR_DEFER(if constexpr (IsNone<N_t>) { grid.free(n); });
   if constexpr (IsNone<N_t>) { normals(grid, psi, n); }
 
   auto u = grid.alloc_vector();
   IGOR_DEFER(grid.free(u););
-  detail::advection_velocity(grid, psi, n, u);
+  detail::advection_velocity(grid, psi, band_width, n, u);
 
   // Solve PDE
   // du/dtau + H(psi) n * grad(f) = 0
-  constexpr Float CFL = 0.25;
-  const Float dtau    = CFL * std::min(grid.dx(), grid.dy());  // Max. velocity is 1
 
-  auto f_old          = grid.alloc_scalar();
-  auto fL             = grid.alloc_face_vector();
-  auto fR             = grid.alloc_face_vector();
+  auto f_old = grid.alloc_scalar();
   IGOR_DEFER(grid.free(f_old););
+#ifdef PALE_ASLAM_WENO
+  auto fL = grid.alloc_face_vector();
+  auto fR = grid.alloc_face_vector();
   IGOR_DEFER(grid.free(fL););
   IGOR_DEFER(grid.free(fR););
-  for (double tau = 0.0; tau <= tau_end; tau += dtau) {  // NOLINT
+#else
+  auto dfdt = grid.alloc_scalar();
+  IGOR_DEFER(grid.free(dfdt););
+#endif  // PALE_ASLAM_WENO
+
+  // Forward Euler step g <- g + dtau * L(g)
+  const auto euler_step = [&](Scalar<Float, LAYOUT> g) {
+#ifdef PALE_ASLAM_WENO
+    // weno_reconstruction(grid, g, fL, fR);
+    // Only do necessary reconstructions
+    {
+      PALE_PROFILE_SCOPE("weno_reconstruction");
+      IGOR_ASSERT(grid.nghost() >= 3, "WENO-5 scheme requires at least 3 ghost cells.");
+
+      grid.template foreach_face_i<Dimension::X>(FOREACH_FUNC {
+        if (!(psi(i - 1, j) >= 0.0 || psi(i, j) >= 0.0)) { return; }
+        if (u.x(i - 1, j) >= 0.0 || u.x(i, j) >= 0.0) {
+          fL.x(i, j) = weno_left_biased_reconstruction(
+              g(i - 3, j), g(i - 2, j), g(i - 1, j), g(i, j), g(i + 1, j));
+        }
+        if (u.x(i - 1, j) <= 0.0 || u.x(i, j) <= 0.0) {
+          fR.x(i, j) = weno_right_biased_reconstruction(
+              g(i - 2, j), g(i - 1, j), g(i, j), g(i + 1, j), g(i + 2, j));
+        }
+      });
+
+      grid.template foreach_face_i<Dimension::Y>(FOREACH_FUNC {
+        if (!(psi(i, j - 1) >= 0.0 || psi(i, j) >= 0.0)) { return; }
+        if (u.y(i, j - 1) >= 0.0 || u.y(i, j) >= 0.0) {
+          fL.y(i, j) = weno_left_biased_reconstruction(
+              g(i, j - 3), g(i, j - 2), g(i, j - 1), g(i, j), g(i, j + 1));
+        }
+        if (u.y(i, j - 1) < 0.0 || u.y(i, j) < 0.0) {
+          fR.y(i, j) = weno_right_biased_reconstruction(
+              g(i, j - 2), g(i, j - 1), g(i, j), g(i, j + 1), g(i, j + 2));
+        }
+      });
+    }
+
+    detail::aslam_advection_do_step_weno(grid, g, u, fL, fR, src, g);
+#else
+    detail::aslam_advection_do_step_minmod(grid, g, u, src, dfdt, g);
+#endif
+    apply_neumann_bconds(grid, g);
+  };
+
+  // Iterate to the steady state; stop once the largest change per pseudo time step is small
+  // compared to the values in the fluid and the band
+  constexpr Index max_iter = 1000;
+  constexpr Float rtol     = 1e-4;
+  struct Change {
+    Float max_change;
+    Float max_abs;
+  };
+
+  Index iter;
+  for (iter = 0; iter < max_iter; ++iter) {
     copy(f, f_old);
 
-    // = Half step ===
-    weno_reconstruction(grid, f, fL, fR);
-    detail::aslam_advection_do_step(grid, 0.5 * dtau, f_old, u, fL, fR, src, f);
+    // = SSP-RK3 (Shu & Osher, 1988) =======================
+    // = First stage ====
+    euler_step(f);
 
-    // = Full step ===
-    weno_reconstruction(grid, f, fL, fR);
-    detail::aslam_advection_do_step(grid, dtau, f_old, u, fL, fR, src, f);
+    // = Second stage ===
+    euler_step(f);
+    grid.foreach_i(FOREACH_FUNC { f(i, j) = 0.75 * f_old(i, j) + 0.25 * f(i, j); });
+    apply_neumann_bconds(grid, f);
+
+    // = Third stage ====
+    euler_step(f);
+    grid.foreach_i(FOREACH_FUNC { f(i, j) = f_old(i, j) / 3.0 + 2.0 / 3.0 * f(i, j); });
+    apply_neumann_bconds(grid, f);
+
+    // = Calculate max. change for stopping criterion ======
+    const auto change = grid.transform_reduce_i(
+        Change{.max_change = 0.0, .max_abs = 0.0},
+        FOREACH_FUNC {
+          if (psi(i, j) > 0.0 && u.x(i, j) == 0.0 && u.y(i, j) == 0.0) { return Change{}; }
+          return Change{
+              .max_change = std::abs(f(i, j) - f_old(i, j)),
+              .max_abs    = std::abs(f(i, j)),
+          };
+        },
+        [](Change lhs, const Change& rhs) {
+          return Change{
+              .max_change = std::max(lhs.max_change, rhs.max_change),
+              .max_abs    = std::max(lhs.max_abs, rhs.max_abs),
+          };
+        });
+    if (change.max_change <= rtol * change.max_abs) { break; }
   }
+  return iter;
 }
 
 // =================================================================================================
 template <typename Float, Layout LAYOUT, IsNoneOr<Vector<Float, LAYOUT>> N_t = None>
-constexpr void linear_extrapolate(const Grid<Float, LAYOUT>& grid,
+constexpr auto linear_extrapolate(const Grid<Float, LAYOUT>& grid,
                                   Scalar<Float, LAYOUT> f,
                                   Scalar<Float, LAYOUT> psi,
-                                  Float tau_end = 0.1,
-                                  N_t n_in      = None{}) {
+                                  Float band_width,
+                                  N_t n_in = None{}) -> Index {
+  PALE_PROFILE_FUNCTION;
+
   auto n = IF_NONE_ELSE(N_t, grid.alloc_vector(), n_in);
   IGOR_DEFER(if constexpr (IsNone<N_t>) { grid.free(n); });
   if constexpr (IsNone<N_t>) { normals(grid, psi, n); }
@@ -168,19 +398,22 @@ constexpr void linear_extrapolate(const Grid<Float, LAYOUT>& grid,
   IGOR_DEFER(grid.free(un););
   detail::calc_un(grid, n, f, psi, un);
 
-  constant_extrapolate(grid, un, psi, tau_end, n, None{});
+  Index num_iter = constant_extrapolate(grid, un, psi, band_width, n, None{});
   grid.foreach_i(FOREACH_FUNC { un(i, j) = psi(i, j) > 0.0 ? un(i, j) : 0.0; });
 
-  constant_extrapolate(grid, f, psi, tau_end, n, un);
+  num_iter += constant_extrapolate(grid, f, psi, band_width, n, un);
+  return num_iter;
 }
 
 // =================================================================================================
 template <typename Float, Layout LAYOUT, IsNoneOr<Vector<Float, LAYOUT>> N_t = None>
-constexpr void quadratic_extrapolate(const Grid<Float, LAYOUT>& grid,
+constexpr auto quadratic_extrapolate(const Grid<Float, LAYOUT>& grid,
                                      Scalar<Float, LAYOUT> f,
                                      Scalar<Float, LAYOUT> psi,
-                                     Float tau_end = 0.1,
-                                     N_t n_in      = None{}) {
+                                     Float band_width,
+                                     N_t n_in = None{}) -> Index {
+  PALE_PROFILE_FUNCTION;
+
   auto n = IF_NONE_ELSE(N_t, grid.alloc_vector(), n_in);
   IGOR_DEFER(if constexpr (IsNone<N_t>) { grid.free(n); });
   if constexpr (IsNone<N_t>) { normals(grid, psi, n); }
@@ -190,30 +423,36 @@ constexpr void quadratic_extrapolate(const Grid<Float, LAYOUT>& grid,
   IGOR_DEFER(grid.free(un););
   detail::calc_un(grid, n, f, psi, un);
 
-  linear_extrapolate(grid, un, psi, tau_end, n);
+  Index num_iter = linear_extrapolate(grid, un, psi, band_width, n);
   grid.foreach_i(FOREACH_FUNC { un(i, j) = psi(i, j) > 0.0 ? un(i, j) : 0.0; });
 
-  constant_extrapolate(grid, f, psi, tau_end, n, un);
+  num_iter += constant_extrapolate(grid, f, psi, band_width, n, un);
+  return num_iter;
 }
 
 // =================================================================================================
-template <bool linear = true,
+template <Index ORDER = 1,
           typename Float,
           Layout LAYOUT,
           IsNoneOr<Vector<Float, LAYOUT>> N_t   = None,
           IsNoneOr<Scalar<Float, LAYOUT>> SRC_t = None>
-constexpr void neumann_extrapolate(const Grid<Float, LAYOUT>& grid,
+constexpr auto neumann_extrapolate(const Grid<Float, LAYOUT>& grid,
                                    Scalar<Float, LAYOUT> f,
                                    Scalar<Float, LAYOUT> psi,
                                    Float dfdn,
-                                   Float tau_end = 0.1,
-                                   N_t n_in      = None{}) {
-  if (linear) {
+                                   Float band_width,
+                                   N_t n_in = None{}) -> Index {
+  PALE_PROFILE_FUNCTION;
+
+  static_assert(ORDER == 1 || ORDER == 2,
+                "ORDER can be 1 for linear or 2 for quadratic extrapolation.");
+
+  if (ORDER == 1) {
     auto fn = grid.alloc_scalar();
     IGOR_DEFER(grid.free(fn););
     grid.foreach_i(FOREACH_FUNC { fn(i, j) = psi(i, j) > 0.0 ? dfdn : 0.0; });
 
-    constant_extrapolate(grid, f, psi, tau_end, n_in, fn);
+    return constant_extrapolate(grid, f, psi, band_width, n_in, fn);
   } else {
     auto n = IF_NONE_ELSE(N_t, grid.alloc_vector(), n_in);
     IGOR_DEFER(if constexpr (IsNone<N_t>) { grid.free(n); });
@@ -227,11 +466,12 @@ constexpr void neumann_extrapolate(const Grid<Float, LAYOUT>& grid,
     // Calculate fnn=n dot grad(n dot grad(f)) in the liquid and extrapolate constant
     detail::calc_un(grid, n, f, psi, fn);
     detail::calc_un(grid, n, fn, psi, fnn);
-    constant_extrapolate(grid, fnn, psi, tau_end, n, None{});
+    Index num_iter = constant_extrapolate(grid, fnn, psi, band_width, n, None{});
 
     // Calculate fn=dfdn + d*fnn. This works because fnn is constant along the normal
     grid.foreach_i(
         FOREACH_FUNC { fn(i, j) = psi(i, j) > 0.0 ? dfdn + fnn(i, j) * psi(i, j) : 0.0; });
-    constant_extrapolate(grid, f, psi, tau_end, n, fn);
+    num_iter += constant_extrapolate(grid, f, psi, band_width, n, fn);
+    return num_iter;
   }
 }

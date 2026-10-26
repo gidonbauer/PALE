@@ -55,6 +55,7 @@ FAST     ?= 0
 SANITIZE ?= 0
 SCOREP   ?= 0
 PARALLEL ?= 0
+PROFILE  ?= 0
 
 ifeq (${DEBUG}, 1)
   CXX_FLAGS += ${CXX_DEBUG_FLAGS}

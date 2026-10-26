@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Igor/Defer.hpp>
 #include <Igor/Math.hpp>
 
 #include "Grid.hpp"
@@ -80,6 +81,7 @@ constexpr void update_s(const Grid<Float, LAYOUT>& grid,
 // =================================================================================================
 template <typename Float, Layout LAYOUT>
 constexpr auto advection_adjust_dt(const Grid<Float, LAYOUT>& grid, Float D, Float CFL) -> Float {
+  PALE_PROFILE_FUNCTION;
   IGOR_ASSERT(D >= 0.0, "Diffusion coefficient cannot be negative but is {}", D);
   const auto h = std::min(grid.dx(), grid.dy());
   return D > 0.0 ? CFL * 0.25 * Igor::sqr(h) / D : std::numeric_limits<Float>::max();
@@ -93,8 +95,11 @@ constexpr void calc_advection_flux(const Grid<Float, LAYOUT>& grid,
                                    const W_t& w,
                                    Float D,
                                    FaceVector<Float, LAYOUT> F) {
-  static auto sL = grid.alloc_face_vector();
-  static auto sR = grid.alloc_face_vector();
+  PALE_PROFILE_FUNCTION;
+  auto sL = grid.alloc_face_vector();
+  auto sR = grid.alloc_face_vector();
+  IGOR_DEFER(grid.free(sL););
+  IGOR_DEFER(grid.free(sR););
   weno_reconstruction(grid, s, sL, sR);
   dispatch_metric(
       grid,
@@ -124,6 +129,7 @@ constexpr void update_s(const Grid<Float, LAYOUT>& grid,
                         const SRC_t src,
                         const Scalar<Float, LAYOUT> s_old,
                         Scalar<Float, LAYOUT> s) {
+  PALE_PROFILE_FUNCTION;
   dispatch_metric(
       grid, DISPATCH_FUNC { Orthogonal::update_s<Metric>(grid, dt, J_old, J, F, src, s_old, s); });
 }

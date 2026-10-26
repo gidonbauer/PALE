@@ -95,6 +95,24 @@ constexpr void calc_ib_volume_fraction(const Grid<Float, LAYOUT>& grid,
 }
 
 // -------------------------------------------------------------------------------------------------
+template <typename Shape, typename Float, Layout LAYOUT>
+constexpr void calc_ib_levelset_shape(const Grid<Float, LAYOUT>& grid,
+                                      const Shape& wall,
+                                      Scalar<Float, LAYOUT> ib_levelset) {
+  switch (grid.coords()) {
+    case Coordinates::CARTESIAN:
+      grid.foreach_a(FOREACH_FUNC { ib_levelset(i, j) = wall.levelset(grid.xm(i), grid.ym(j)); });
+      break;
+    case Coordinates::SYMMETRIC_SPHERICAL:
+    case Coordinates::POLAR:
+      grid.foreach_a(FOREACH_FUNC {
+        ib_levelset(i, j) = wall.levelset(polar2cartesian(grid.thetam(i), grid.rm(j)));
+      });
+      break;
+  }
+}
+
+// -------------------------------------------------------------------------------------------------
 // Fraction delta in (0, 1] of the step p -> n at which the wall is crossed
 template <typename FUNC, typename Float>
 [[nodiscard]] constexpr auto
@@ -160,12 +178,14 @@ template <typename Shape, typename Float, Layout LAYOUT, typename IB_CORR_t>
 requires(IsScalar<IB_CORR_t, Float, LAYOUT> || IsFaceVector<IB_CORR_t, Float, LAYOUT>)
 constexpr void
 calc_ib_correction_shape(const Grid<Float, LAYOUT>& grid, const Shape& wall, IB_CORR_t ib_corr) {
+  PALE_PROFILE_FUNCTION;
   auto immersed_wall = [&](Float x, Float y) {
     switch (grid.coords()) {
       case Coordinates::CARTESIAN:           return wall.contains(Vec2<Float>{.x = x, .y = y});
       case Coordinates::POLAR:
       case Coordinates::SYMMETRIC_SPHERICAL: return wall.contains(polar2cartesian(x, y));
     }
+    Igor::Panic("Unreachable");
   };
 
   const auto dx = grid.dx();
@@ -244,6 +264,7 @@ constexpr void correct_velocity_ib_implicit_euler(const Grid<Float, LAYOUT>& gri
                                                   Float mu,
                                                   Float dt,
                                                   FaceVector<Float, LAYOUT> u) {
+  PALE_PROFILE_FUNCTION;
   const auto nu = mu / rho;
   grid.template foreach_face_i<Dimension::X>(
       FOREACH_FUNC { u.x(i, j) /= 1.0 + dt * nu * ib_corr.x(i, j); });
@@ -352,6 +373,7 @@ constexpr void update_u_ib_semi_analytical(const Grid<Float, LAYOUT>& grid,
                                            const FaceVector<Float, LAYOUT> ib_corr,
                                            const FaceVector<Float, LAYOUT> u_old,
                                            FaceVector<Float, LAYOUT> u) {
+  PALE_PROFILE_FUNCTION;
   dispatch_metric(
       grid, DISPATCH_FUNC {
         if constexpr (Metric::is_2d != IsNone<FWZ_t>) {

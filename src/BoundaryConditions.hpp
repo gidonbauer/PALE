@@ -502,6 +502,7 @@ constexpr void apply_bconds(const Grid<Float, LAYOUT>& grid,
                             const BConds<Float> bconds,
                             Scalar<Float, LAYOUT> s,
                             Float t) noexcept {
+  PALE_PROFILE_FUNCTION;
 #define APPLY(side)                                                                                \
   do {                                                                                             \
     if (std::holds_alternative<Dirichlet<Float>>(bconds.side)) {                                   \
@@ -530,6 +531,7 @@ void apply_velocity_bconds(const Grid<Float, LAYOUT>& grid,
                            const BConds<Float>& v_bconds,
                            FaceVector<Float, LAYOUT> u,
                            Float t = -1.0) {
+  PALE_PROFILE_FUNCTION;
 #define APPLY_U_X(side)                                                                            \
   do {                                                                                             \
     if (std::holds_alternative<Dirichlet<Float>>(u_bconds.side)) {                                 \
@@ -607,6 +609,7 @@ void apply_velocity_bconds_only_periodic(const Grid<Float, LAYOUT>& grid,
                                          const BConds<Float>& v_bconds,
                                          FaceVector<Float, LAYOUT> u,
                                          Float /*t*/ = -1.0) {
+  PALE_PROFILE_FUNCTION;
 #define APPLY_U_X(side)                                                                            \
   do {                                                                                             \
     if (std::holds_alternative<Periodic>(u_bconds.side)) {                                         \
@@ -656,6 +659,7 @@ template <typename Float, Layout LAYOUT>
 constexpr void apply_dirichlet_bconds(const Grid<Float, LAYOUT>& grid,
                                       Scalar<Float, LAYOUT> field,
                                       Float value) noexcept {
+  PALE_PROFILE_FUNCTION;
   IGOR_ASSERT(field.nghost() > 0, "Expected at least one ghost cell, but got {}", field.nghost());
   Dirichlet<Float>::apply_left_offset(grid, field, true, -1.0, value);
   Dirichlet<Float>::apply_right_offset(grid, field, true, -1.0, value);
@@ -667,6 +671,7 @@ constexpr void apply_dirichlet_bconds(const Grid<Float, LAYOUT>& grid,
 template <typename Float, Layout LAYOUT>
 constexpr void apply_neumann_bconds(const Grid<Float, LAYOUT>& grid,
                                     Scalar<Float, LAYOUT> field) noexcept {
+  PALE_PROFILE_FUNCTION;
   IGOR_ASSERT(field.nghost() > 0, "Expected at least one ghost cell, but got {}", field.nghost());
   Neumann::apply_left_offset(grid, field);
   Neumann::apply_right_offset(grid, field);
@@ -678,6 +683,7 @@ constexpr void apply_neumann_bconds(const Grid<Float, LAYOUT>& grid,
 template <typename Float, Layout LAYOUT>
 constexpr void apply_periodic_bconds(const Grid<Float, LAYOUT>& grid,
                                      Scalar<Float, LAYOUT> field) noexcept {
+  PALE_PROFILE_FUNCTION;
   IGOR_ASSERT(field.nghost() > 0, "Expected at least one ghost cell, but got {}", field.nghost());
   Periodic::apply_left_offset(grid, field);
   Periodic::apply_right_offset(grid, field);

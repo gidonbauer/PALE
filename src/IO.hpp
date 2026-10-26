@@ -6,9 +6,12 @@
 
 #include <Igor/Logging.hpp>
 
+#include "Profile.hpp"
+
 // -------------------------------------------------------------------------------------------------
 template <typename Float>
 [[nodiscard]] constexpr auto should_save(Float t, Float dt, Float dt_write, Float t_end) -> bool {
+  PALE_PROFILE_FUNCTION;
   constexpr Float DT_SAFE      = 1e-6;
   static Float last_save_t     = -1.0;
 
@@ -29,6 +32,7 @@ get_output_directory(std::string_view subdir   = "output",
                      std::string_view base_dir = PALE_BASE_DIR,
                      std::source_location loc  = std::source_location::current()) noexcept
     -> std::string {
+  PALE_PROFILE_FUNCTION;
   // ===============
   auto strip_path = [](std::string_view full_path) -> std::string_view {
 #if defined(WIN32) || defined(_WIN32)
@@ -69,6 +73,7 @@ get_output_directory(std::string_view subdir   = "output",
 
 // -------------------------------------------------------------------------------------------------
 [[nodiscard]] auto init_output_directory(std::string_view directory_name) noexcept -> bool {
+  PALE_PROFILE_FUNCTION;
   std::error_code ec;
 
   std::filesystem::remove_all(directory_name, ec);

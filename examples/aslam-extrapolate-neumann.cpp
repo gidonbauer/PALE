@@ -102,13 +102,9 @@ auto main(int argc, char** argv) -> int {
   writer.add_field("dudn", dudn_calc);
   writer.write(0.0);
 
-  const double band_size = 6.0 * std::max(grid.dx(), grid.dy());
-#if 1
-  const double tau_end = 2.5;
-#else
-  const double tau_end = 4.0 * band_size;
-#endif
-  IGOR_TIME_SCOPE("Extrapolation") { neumann_extrapolate(grid, u, psi, dudn, tau_end); }
+  const auto band_width = 3.0;
+  const auto band_size  = band_width * std::max(grid.dx(), grid.dy());
+  IGOR_TIME_SCOPE("Extrapolation") { neumann_extrapolate<1>(grid, u, psi, dudn, band_width); }
 
   grid.foreach_i(FOREACH_FUNC {
     if (psi(i, j) < 0.0) {

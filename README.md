@@ -62,6 +62,18 @@ It subtracts the volume-weighted mean from the right-hand side, so pure-Neumann 
 The solver uses $\Delta V = \Delta x \Delta y$ in the Cartesian case and $\Delta V = H \Delta \theta \Delta r$ in the polar and spherical case.
 This means that in the spherical case each cell has unit depth in $\phi$ direction and to get the total mass one must multiply by $2 \pi$.
 
+## Immersed Boundaries
+
+The solver supports immersed boundaries of simple shapes (defined in `src/Geometry.hpp`).
+Immersed boundaries for the velocity are enforced using the 2nd order method by Luchini et al.[^Luchini2025].
+It works by correcting the viscous terms in the velocity stencil to account for the boundary.
+One no-slip conditions are possible at the moment.
+
+The immersed boundaries for species are implemented by extrapolating the species field into the solid with a given normal derivative at the interface.
+This implements Neumann boundary conditions.
+The extrapolation is done using a variant of Aslams PDE-based extrapolation method[^Aslam2004].
+The method is **not** conservative.
+
 ## Parallelization
 
 The code is parallelized using the built-in parallelism of the C++ algorithms.
@@ -90,3 +102,8 @@ The output can be visualized with [ParaView](https://www.paraview.org/).
     - Popov, Y.O., 2005. Evaporative deposition patterns: Spatial dimensions of the deposit. Phys. Rev. E 71, 036313. https://doi.org/10.1103/PhysRevE.71.036313
 - [ ] Model the electrode via immersed boundaries
 - [ ] Think about profiling, maybe use [minitrace](https://github.com/hrydgard/minitrace)
+
+
+[^Luchini2025]: Luchini, P., Gatti, D., Chiarini, A., Gattere, F., Atzori, M., Quadrio, M., 2025. A simple and efficient second-order immersed-boundary method for the incompressible Navier–Stokes equations. Journal of Computational Physics 539, 114245. https://doi.org/10.1016/j.jcp.2025.114245
+
+[^Aslam2004]: Aslam, T.D., 2004. A partial differential equation approach to multidimensional extrapolation. Journal of Computational Physics 193, 349–355. https://doi.org/10.1016/j.jcp.2003.08.001

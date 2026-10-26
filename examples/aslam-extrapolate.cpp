@@ -134,17 +134,14 @@ constexpr auto run(Method method, Index N, const std::string& base_output_dir, s
   writer.add_field("psi", psi);
   writer.write(0.0);
 
-  const double band_size = 6.0 * std::max(grid.dx(), grid.dy());
-#if 0
-  const double tau_end = 2.5;
-#else
-  const double tau_end = 4.0 * band_size;
-#endif
+  const double band_width = 6.0;
+  const double band_size  = band_width * std::max(grid.dx(), grid.dy());
+
   IGOR_TIME_SCOPE(method2str(method) + " extrapolation " + std::to_string(N)) {
     switch (method) {
-      case Method::CONSTANT:  constant_extrapolate(grid, u, psi, tau_end); break;
-      case Method::LINEAR:    linear_extrapolate(grid, u, psi, tau_end); break;
-      case Method::QUADRATIC: quadratic_extrapolate(grid, u, psi, tau_end); break;
+      case Method::CONSTANT:  constant_extrapolate(grid, u, psi, band_width); break;
+      case Method::LINEAR:    linear_extrapolate(grid, u, psi, band_width); break;
+      case Method::QUADRATIC: quadratic_extrapolate(grid, u, psi, band_width); break;
     }
   }
   writer.write(1.0);

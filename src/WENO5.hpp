@@ -63,6 +63,7 @@ constexpr void weno_reconstruction(const Grid<Float, LAYOUT>& grid,
                                    const Scalar<Float, LAYOUT> s,
                                    FaceVector<Float, LAYOUT> sL,
                                    FaceVector<Float, LAYOUT> sR) {
+  PALE_PROFILE_FUNCTION;
   IGOR_ASSERT(grid.nghost() >= 3, "WENO-5 scheme requires at least 3 ghost cells.");
 
   grid.template foreach_face_i<Dimension::X>(FOREACH_FUNC {
