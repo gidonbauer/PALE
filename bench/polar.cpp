@@ -335,5 +335,6 @@ auto main(int argc, char** argv) -> int {
     monitor.write();
   }
 
+  if (num_threads > 0) { Igor::Info("num_threads = {}", num_threads); }
   Igor::Info("Ok.");
 }

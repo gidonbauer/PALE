@@ -70,7 +70,7 @@ endif
 
 ifeq (${SCOREP}, 1)
   CXX_FLAGS += -g -fno-omit-frame-pointer
-  CXX := scorep ${CXX}
+  CXX := scorep --mpp=none ${CXX}
 endif
 
 ifeq (${PARALLEL}, 1)
