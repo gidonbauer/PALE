@@ -47,6 +47,8 @@
 // proportional to the wall shear divided by r.
 
 // -------------------------------------------------------------------------------------------------
+namespace detail {
+
 enum Flow : uint8_t {
   FREE_FLOW      = 0b00000,
   WALL_TO_LEFT   = 0b00001,
@@ -56,10 +58,16 @@ enum Flow : uint8_t {
   SOLID          = 0b10000,
 };
 
+constexpr double LAMBDA_MAX = 1e10;
+
+}  // namespace detail
+
 template <typename FUNC, typename Float, Layout LAYOUT>
 constexpr auto
 characterize_flow_regime(const Grid<Float, LAYOUT>& grid, FUNC immersed_wall, Float x, Float y)
     -> uint8_t {
+  using detail::Flow;
+
   if (immersed_wall(x, y) > 0.0) { return Flow::SOLID; }
 
   uint8_t flow = Flow::FREE_FLOW;
@@ -179,6 +187,9 @@ requires(IsScalar<IB_CORR_t, Float, LAYOUT> || IsFaceVector<IB_CORR_t, Float, LA
 constexpr void
 calc_ib_correction_shape(const Grid<Float, LAYOUT>& grid, const Shape& wall, IB_CORR_t ib_corr) {
   PALE_PROFILE_FUNCTION;
+
+  using detail::Flow;
+
   auto immersed_wall = [&](Float x, Float y) {
     switch (grid.coords()) {
       case Coordinates::CARTESIAN:           return wall.contains(Vec2<Float>{.x = x, .y = y});
@@ -257,19 +268,72 @@ calc_ib_correction_shape(const Grid<Float, LAYOUT>& grid, const Shape& wall, IB_
 }
 
 // -------------------------------------------------------------------------------------------------
-template <typename Float, Layout LAYOUT>
-constexpr void correct_velocity_ib_implicit_euler(const Grid<Float, LAYOUT>& grid,
-                                                  const FaceVector<Float, LAYOUT> ib_corr,
-                                                  Float rho,
-                                                  Float mu,
-                                                  Float dt,
-                                                  FaceVector<Float, LAYOUT> u) {
+template <typename Float, Layout LAYOUT, IsNoneOr<Vec2<Float>> U_WALL_CART_t>
+constexpr void correct_velocity_ib_implicit_euler(
+    const Grid<Float, LAYOUT>& grid,
+    const FaceVector<Float, LAYOUT> ib_corr,
+    Float rho,
+    Float mu,
+    Float dt,
+    const U_WALL_CART_t& u_wall_cartesian,  // This is **always** in cartesian coordinates
+    FaceVector<Float, LAYOUT> u) {
   PALE_PROFILE_FUNCTION;
+
   const auto nu = mu / rho;
-  grid.template foreach_face_i<Dimension::X>(
-      FOREACH_FUNC { u.x(i, j) /= 1.0 + dt * nu * ib_corr.x(i, j); });
-  grid.template foreach_face_i<Dimension::Y>(
-      FOREACH_FUNC { u.y(i, j) /= 1.0 + dt * nu * ib_corr.y(i, j); });
+  if constexpr (IsNone<U_WALL_CART_t>) {
+    grid.template foreach_face_i<Dimension::X>(
+        FOREACH_FUNC { u.x(i, j) /= 1.0 + dt * nu * ib_corr.x(i, j); });
+    grid.template foreach_face_i<Dimension::Y>(
+        FOREACH_FUNC { u.y(i, j) /= 1.0 + dt * nu * ib_corr.y(i, j); });
+  } else {
+    switch (grid.coords()) {
+      case Coordinates::CARTESIAN:
+        grid.template foreach_face_i<Dimension::X>(FOREACH_FUNC {
+          const auto lambda = nu * ib_corr.x(i, j);
+          if (lambda > detail::LAMBDA_MAX) {
+            u.x(i, j) = u_wall_cartesian.x;
+          } else {
+            u.x(i, j) = (u.x(i, j) + dt * lambda * u_wall_cartesian.x) / (1.0 + dt * lambda);
+          }
+        });
+        grid.template foreach_face_i<Dimension::Y>(FOREACH_FUNC {
+          const auto lambda = nu * ib_corr.y(i, j);
+          if (lambda > detail::LAMBDA_MAX) {
+            u.y(i, j) = u_wall_cartesian.y;
+          } else {
+            u.y(i, j) = (u.y(i, j) + dt * lambda * u_wall_cartesian.y) / (1.0 + dt * lambda);
+          }
+        });
+        break;
+      case Coordinates::SYMMETRIC_SPHERICAL:
+      case Coordinates::POLAR:
+        grid.template foreach_face_i<Dimension::X>(FOREACH_FUNC {
+          const auto lambda = nu * ib_corr.x(i, j);
+          const auto theta  = grid.theta(i);
+          const auto uth =
+              -std::sin(theta) * u_wall_cartesian.x + std::cos(theta) * u_wall_cartesian.y;
+
+          if (lambda > detail::LAMBDA_MAX) {
+            u.x(i, j) = uth;
+          } else {
+            u.x(i, j) = (u.x(i, j) + dt * lambda * uth) / (1.0 + dt * lambda);
+          }
+        });
+        grid.template foreach_face_i<Dimension::Y>(FOREACH_FUNC {
+          const auto lambda = nu * ib_corr.y(i, j);
+          const auto theta  = grid.thetam(i);
+          const auto ur =
+              std::cos(theta) * u_wall_cartesian.x + std::sin(theta) * u_wall_cartesian.y;
+
+          if (lambda > detail::LAMBDA_MAX) {
+            u.y(i, j) = ur;
+          } else {
+            u.y(i, j) = (u.y(i, j) + dt * lambda * ur) / (1.0 + dt * lambda);
+          }
+        });
+        break;
+    }
+  }
 }
 
 // -------------------------------------------------------------------------------------------------
@@ -317,13 +381,12 @@ constexpr void update_u_ib_semi_analytical(const Grid<Float, LAYOUT>& grid,
     A = lambda * dt + B;
     C = dt;
   };
-  constexpr Float LAMBDA_MAX = 1e10;
 
-  const auto nu              = mu / rho;
+  const auto nu = mu / rho;
 
   grid.template foreach_face_i<Dimension::X>(FOREACH_FUNC {
     const Float lambda = nu * ib_corr.x(i, j);
-    if (lambda > LAMBDA_MAX) {
+    if (lambda > detail::LAMBDA_MAX) {
       u.x(i, j) = 0.0;
       return;
     }
@@ -338,7 +401,7 @@ constexpr void update_u_ib_semi_analytical(const Grid<Float, LAYOUT>& grid,
 
   grid.template foreach_face_i<Dimension::Y>(FOREACH_FUNC {
     const Float lambda = nu * ib_corr.y(i, j);
-    if (lambda > LAMBDA_MAX) {
+    if (lambda > detail::LAMBDA_MAX) {
       u.y(i, j) = 0.0;
       return;
     }

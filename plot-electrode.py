@@ -28,18 +28,21 @@ def main():
     ax[0].set_ylabel("Total species")
     ax[0].legend()
 
-    t = df["t"].to_numpy()[::20]
-    s = df["sum(s)"].to_numpy()[::20]
+    step = int(1e-1/df["dt"].mean())
+    t = df["t"].to_numpy()[::step]
+    s = df["sum(s)"].to_numpy()[::step]
     dsdt = np.gradient(s, t)
 
     ax[1].plot(t, dsdt, label="Simulation")
-    ax[1].plot([df["t"].min(), df["t"].max()], [np.sqrt(2**2 - 1.5**2)*1e-2*1.0]*2, linestyle="--", label="Expected")
+    dsdt_true = np.sqrt(2**2 - 1.5**2)*1e-2*1.0
+    ax[1].plot([df["t"].min(), df["t"].max()], [dsdt_true]*2, linestyle="--", label="Expected")
     # ax[1].plot(df["t"], df["dsdt"], label="Simulation")
     # ax[1].plot(df["t"], df["exp. dsdt"], linestyle="--", label="Expected")
 
     ax[1].set_xlabel("Time")
     ax[1].set_ylabel(R"$\partial s_T/\partial t$")
     ax[1].legend()
+    ax[1].set_ylim([dsdt_true*0.99, dsdt_true*1.01])
 
     plt.show()
 

@@ -245,6 +245,7 @@ Using the implicit Euler discretization for the correction, we obtain
         &u_{i,j}^{n+1} =
         \frac{u_{i,j}^n + \Delta t R_{i,j}^n}{1 + \Delta t \lambda_{i,j} \nu}
     \end{split}
+    \label{eq:update_u_implicit_euler}
 \end{equation}
 which is a simple addition to the vanilla numerical method.
 
@@ -273,7 +274,7 @@ In the simplest case we have $F_{i,j}^n = R_{i,j}^n$.
 \subsection{Further Remarks}
 
 \begin{itemize}
-    \item The velocity values inside of the solid must be set to zero.
+    \item The velocity values inside of the solid must be set to zero in the case of static walls.
     \item The corrections are linear and can be calculated for each direction separately and then added.
     \item The calculated value for the velocity is the predicted value in the prediction-correction scheme.
     This has to be corrected for it to be divergence-free.
@@ -305,13 +306,56 @@ We therefore have an additional term in the correction $\eta = d^{(2)}_{x;i,j}(-
         \pd{u_{i,j}}{t}
         &= -\lambda_{i,j} \nu u_{i,j} + \nu \eta_{i,j} +  R_{i,j} \\
         &= -\lambda_{i,j} \nu u_{i,j} + \nu \eta_{i,j}
-        + d^{(2)}_{x;i,j}( 0) u_{i,  j}
-        + d^{(2)}_{x;i,j}( 1) u_{i+1,j}
+        + \nu d^{(2)}_{x;i,j}( 0) u_{i,  j}
+        + \nu d^{(2)}_{x;i,j}( 1) u_{i+1,j}
         + \dots
     \end{split}
 \end{equation}
 
-\textcolor{rwth-red-100}{\texttt{[TODO]} This is not complete yet.}
+We again apply the implicit Euler time discretization of the correction terms
+\begin{equation}
+    \begin{split}
+        &\frac{u_{i,j}^{n+1} - u_{i,j}^n}{\Delta t} =
+        -\lambda_{i,j} \nu u_{i,j}^{n+1} + \nu \eta_{i,j} +  R_{i,j}^n \\
+        \Rightarrow\ &
+        u_{i,j}^{n+1}
+        = 
+        \frac{
+            u_{i,j}^n
+            + \Delta t R_{i,j}^n
+            + \Delta t \nu \eta_{i,j}
+        }{1 + \Delta t \lambda_{i,j} \nu}
+    \end{split}
+\end{equation}
+Compared to Eq. \eqref{eq:update_u_implicit_euler} we get the additional term $\Delta t \nu \eta_{i,j}$ in the numerator, the rest stays unchanged.
+
+If the velocity inside the solid is set to $u^*$, the term $d^{(2)}_{x;i,j}(-1) u^*$ is included in $R_{i,j}^n$.
+Then the correction becomes
+\begin{equation}
+    \begin{split}
+        &R_{i,j}^n + \nu \eta_{i,j} \\
+        =\ &R_{i,j}^n + \nu d^{(2)}_{x;i,j}(-1) \frac{u^*}{\xi} \\
+        =\ &\underbrace{R_{i,j}^n + \nu d^{(2)}_{x;i,j}(-1) u^*}_{= \tilde{R}_{i,j}^n}
+        + \nu \underbrace{d^{(2)}_{x;i,j}(-1) \left(\frac{1 - \xi}{\xi}\right)}_{=\lambda_{i,j}} u^* \\
+        \Rightarrow \ &u_{i,j}^{n+1}
+        = 
+        \frac{
+            u_{i,j}^n
+            + \Delta t \tilde{R}_{i,j}^n
+            + \Delta t \nu \lambda_{i,j} u^*
+        }{1 + \Delta t \nu \lambda_{i,j}}.
+    \end{split}
+\end{equation}
+This requires no extra calculation for $\eta$.
+The right-hand side including the wall velocity $\tilde{R}_{i,j}^n$ is automatically calculated when the value inside the solid is set to $u^*$.
+
+When using the updated right-hand side, we get the following ODE:
+\begin{equation}
+    \pd{u_{i,j}}{t}
+    = -\nu \lambda_{i,j} u_{i,j} + \nu \lambda_{i,j} u^* +  \tilde{R}_{i,j}.
+\end{equation}
+Assuming $u^* = \text{const}$ for the time step,
+this fits the analytical update rule from Eq. \eqref{eq:analytical-correction} with $F_{i,j}^n = \tilde{R}_{i,j}^n + \nu \lambda_{i,j} u^*$.
 
 % ==================================================================================================
 \section{Immersed Boundary Conditions for Species Transport}

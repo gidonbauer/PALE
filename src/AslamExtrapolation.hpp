@@ -341,23 +341,27 @@ constexpr auto constant_extrapolate(const Grid<Float, LAYOUT>& grid,
     Float max_abs;
   };
 
-  Index iter;
-  for (iter = 0; iter < max_iter; ++iter) {
-    copy(f, f_old);
-
+  Index iter = 0;
+  while (iter < max_iter) {
     // = SSP-RK3 (Shu & Osher, 1988) =======================
-    // = First stage ====
-    euler_step(f);
+    {
+      copy(f, f_old);
 
-    // = Second stage ===
-    euler_step(f);
-    grid.foreach_i(FOREACH_FUNC { f(i, j) = 0.75 * f_old(i, j) + 0.25 * f(i, j); });
-    apply_neumann_bconds(grid, f);
+      // = First stage ====
+      euler_step(f);
 
-    // = Third stage ====
-    euler_step(f);
-    grid.foreach_i(FOREACH_FUNC { f(i, j) = f_old(i, j) / 3.0 + 2.0 / 3.0 * f(i, j); });
-    apply_neumann_bconds(grid, f);
+      // = Second stage ===
+      euler_step(f);
+      grid.foreach_i(FOREACH_FUNC { f(i, j) = 0.75 * f_old(i, j) + 0.25 * f(i, j); });
+      apply_neumann_bconds(grid, f);
+
+      // = Third stage ====
+      euler_step(f);
+      grid.foreach_i(FOREACH_FUNC { f(i, j) = f_old(i, j) / 3.0 + 2.0 / 3.0 * f(i, j); });
+      apply_neumann_bconds(grid, f);
+    }
+    iter += 1;
+    // = SSP-RK3 (Shu & Osher, 1988) =======================
 
     // = Calculate max. change for stopping criterion ======
     const auto change = grid.transform_reduce_i(
@@ -376,6 +380,7 @@ constexpr auto constant_extrapolate(const Grid<Float, LAYOUT>& grid,
           };
         });
     if (change.max_change <= rtol * change.max_abs) { break; }
+    // = Calculate max. change for stopping criterion ======
   }
   return iter;
 }

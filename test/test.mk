@@ -9,7 +9,8 @@ DEFAULT_BUILD_TESTS = test/Advection-Cartesian.cpp \
                       test/ALE-Polar-Conservation \
                       test/ALE-Spherical-Conservation \
                       test/GCL \
-                      test/Scalar-Source
+                      test/Scalar-Source \
+                      test/IB-Moving-Channel
 DEFAULT_BUILD_TESTS := ${addprefix bin/, ${basename ${DEFAULT_BUILD_TESTS}}}
 
 ${DEFAULT_BUILD_TESTS}: bin/test/%: test/%.cpp ${HEADERS} | bin/test test/output

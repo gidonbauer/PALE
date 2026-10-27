@@ -83,12 +83,15 @@ constexpr auto stats(const Grid<Float, LAYOUT>& grid,
           .volume = 0.0,
       },
       FOREACH_FUNC->Stats<Float> {
+        const auto mij  = metric(i, j);
+        const auto fij  = f(i, j);
+        const auto dvij = grid.dv(i, j);
         return Stats<Float>{
-            .min    = metric(i, j) * f(i, j),
-            .max    = metric(i, j) * f(i, j),
-            .sum    = metric(i, j) * grid.dv(i, j) * f(i, j),
-            .stddev = metric(i, j) * grid.dv(i, j) * Igor::sqr(f(i, j)),
-            .volume = metric(i, j) * grid.dv(i, j),
+            .min    = std::abs(mij) > 0.0 ? mij * fij : std::numeric_limits<Float>::max(),
+            .max    = std::abs(mij) > 0.0 ? mij * fij : -std::numeric_limits<Float>::max(),
+            .sum    = mij * dvij * fij,
+            .stddev = mij * dvij * Igor::sqr(fij),
+            .volume = mij * dvij,
         };
       },
       [](Stats<Float> lhs, const Stats<Float>& rhs) -> Stats<Float> {
