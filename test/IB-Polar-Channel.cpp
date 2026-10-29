@@ -211,11 +211,24 @@ auto main(int argc, char** argv) -> int {
       // 1) Predictor
       calc_mom_flux(grid, u, p, rho, mu, FUX, FUY, FVX, FVY);
 #if SEMI_ANALYTICAL
-      update_u_ib_semi_analytical(
-          grid, local_dt, None{}, None{}, FUX, FUY, FVX, FVY, None{}, mu, rho, ib_corr, u_old, u);
+      update_u_ib_semi_analytical(grid,
+                                  local_dt,
+                                  None{},
+                                  None{},
+                                  FUX,
+                                  FUY,
+                                  FVX,
+                                  FVY,
+                                  None{},
+                                  mu,
+                                  rho,
+                                  ib_corr,
+                                  None{},
+                                  u_old,
+                                  u);
 #else
       update_u(grid, local_dt, FUX, FUY, FVX, FVY, u_old, u);
-      correct_velocity_ib_implicit_euler(grid, ib_corr, rho, mu, local_dt, u);
+      correct_velocity_ib_implicit_euler(grid, ib_corr, rho, mu, local_dt, None{}, u);
 #endif
       apply_velocity_bconds(grid, u_bconds, v_bconds, u);
       correct_outflow(grid, u);

@@ -86,6 +86,6 @@ test/output bin/test: %:
 	mkdir -p $@
 
 test-clean:
-	rm -r test/logs test/output
+	rm -fr test/logs test/output
 
 .PHONY: test-clean

@@ -68,6 +68,7 @@ ALL_TESTS = [
     TestCase("IB-Channel-FFT-SA",           [16, 32, 64],                                   False),
     TestCase("IB-Polar-Channel-IE",         [8, 16, 32, 64],                                False),
     TestCase("IB-Polar-Channel-SA",         [8, 16, 32, 64],                                False),
+    TestCase("IB-Moving-Channel",           [16, 32, 64, 128, 256],                         False),
     TestCase("Iterator",                    None,                                           True),
     TestCase("Boundary",                    None,                                           False),
     TestCase("Aslam-Constant",              [16, 32, 64, 96, 128, 512],                     False),

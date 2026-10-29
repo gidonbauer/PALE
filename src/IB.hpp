@@ -125,6 +125,8 @@ constexpr void calc_ib_levelset_shape(const Grid<Float, LAYOUT>& grid,
 template <typename FUNC, typename Float>
 [[nodiscard]] constexpr auto
 wall_fraction(FUNC immersed_wall, const Vec2<Float>& p, const Vec2<Float>& n) -> Float {
+  PALE_PROFILE_FUNCTION;
+
   IGOR_ASSERT(!(immersed_wall(p.x, p.y) > 0.0) && immersed_wall(n.x, n.y) > 0.0,
               "Expected p = ({:.6e}, {:.6e}) outside and n = ({:.6e}, {:.6e}) inside the wall.",
               p.x,
@@ -339,26 +341,29 @@ constexpr void correct_velocity_ib_implicit_euler(
 // -------------------------------------------------------------------------------------------------
 namespace OrthogonalCoordinates {
 
-template <typename Metric,
+template <typename Metric_,
           typename Float,
           Layout LAYOUT,
           IsNoneOr<Scalar<Float, LAYOUT>> J_t,
-          IsNoneOr<Scalar<Float, LAYOUT>> FWZ_t>
-constexpr void update_u_ib_semi_analytical(const Grid<Float, LAYOUT>& grid,
-                                           Float dt,
-                                           const J_t J_old,
-                                           const J_t J,
-                                           const Scalar<Float, LAYOUT> FUX,
-                                           const VertexScalar<Float, LAYOUT> FUY,
-                                           const VertexScalar<Float, LAYOUT> FVX,
-                                           const Scalar<Float, LAYOUT> FVY,
-                                           const FWZ_t FWZ,
-                                           Float mu,
-                                           Float rho,
-                                           const FaceVector<Float, LAYOUT> ib_corr,
-                                           const FaceVector<Float, LAYOUT> u_old,
-                                           FaceVector<Float, LAYOUT> u) {
-  static_assert((Metric::is_2d && IsNone<FWZ_t>) || (!Metric::is_2d && !IsNone<FWZ_t>),
+          IsNoneOr<Scalar<Float, LAYOUT>> FWZ_t,
+          IsNoneOr<Vec2<Float>> U_WALL_CART_t>
+constexpr void update_u_ib_semi_analytical(
+    const Grid<Float, LAYOUT>& grid,
+    Float dt,
+    const J_t J_old,
+    const J_t J,
+    const Scalar<Float, LAYOUT> FUX,
+    const VertexScalar<Float, LAYOUT> FUY,
+    const VertexScalar<Float, LAYOUT> FVX,
+    const Scalar<Float, LAYOUT> FVY,
+    const FWZ_t FWZ,
+    Float mu,
+    Float rho,
+    const FaceVector<Float, LAYOUT> ib_corr,
+    const U_WALL_CART_t& u_wall_cartesian,  // This is **always** in cartesian coordinates
+    const FaceVector<Float, LAYOUT> u_old,
+    FaceVector<Float, LAYOUT> u) {
+  static_assert((Metric_::is_2d && IsNone<FWZ_t>) || (!Metric_::is_2d && !IsNone<FWZ_t>),
                 "Provide `Scalar` for `FWZ` in quasi-3D case and `None` in 2D case.");
   static_assert(IsNone<J_t>, "ALE is not yet implemented.");
   static_cast<void>(J_old);
@@ -367,6 +372,8 @@ constexpr void update_u_ib_semi_analytical(const Grid<Float, LAYOUT>& grid,
   // From Luchini et al.
   // A*U^(n+1) - B*U^n = C*F^n
   // U^(n+1) = (C*F^n + B*U^n) / A
+  //
+  // F^n = right-hand side of Navier-Stokes + nu*lambda*u^*
   //
   // B = (lambda*dt) / (exp(lambda*dt) - 1)
   // A = lambda*dt + B
@@ -391,12 +398,18 @@ constexpr void update_u_ib_semi_analytical(const Grid<Float, LAYOUT>& grid,
       return;
     }
 
-    const auto inv_H = 1.0 / Metric::H(grid.x(i), grid.ym(j));
-    const auto dudt  = -inv_H * calc_H_div_flux_x<Metric>(grid, i, j, FUX, FUY, FVX, FVY, FWZ);
+    const auto inv_H = 1.0 / Metric_::H(grid.x(i), grid.ym(j));
+    const auto dudt  = -inv_H * calc_H_div_flux_x<Metric_>(grid, i, j, FUX, FUY, FVX, FVY, FWZ);
 
     Float A, B, C;  // NOLINT
     calc_coefficients(lambda, dt, A, B, C);
-    u.x(i, j) = (B * u_old.x(i, j) + C * dudt) / A;
+    if constexpr (IsNone<U_WALL_CART_t>) {
+      u.x(i, j) = (B * u_old.x(i, j) + C * dudt) / A;
+    } else {
+      IGOR_ASSERT((std::is_same_v<Metric_, Metric::Cartesian>),
+                  "Only cartesian is supported at the moment.");
+      u.x(i, j) = (B * u_old.x(i, j) + C * (dudt + nu * ib_corr.x(i, j) * u_wall_cartesian.x)) / A;
+    }
   });
 
   grid.template foreach_face_i<Dimension::Y>(FOREACH_FUNC {
@@ -406,12 +419,18 @@ constexpr void update_u_ib_semi_analytical(const Grid<Float, LAYOUT>& grid,
       return;
     }
 
-    const auto inv_H = 1.0 / Metric::H(grid.xm(i), grid.y(j));
-    const auto dvdt  = -inv_H * calc_H_div_flux_y<Metric>(grid, i, j, FUX, FUY, FVX, FVY, FWZ);
+    const auto inv_H = 1.0 / Metric_::H(grid.xm(i), grid.y(j));
+    const auto dvdt  = -inv_H * calc_H_div_flux_y<Metric_>(grid, i, j, FUX, FUY, FVX, FVY, FWZ);
 
     Float A, B, C;  // NOLINT
     calc_coefficients(lambda, dt, A, B, C);
-    u.y(i, j) = (B * u_old.y(i, j) + C * dvdt) / A;
+    if constexpr (IsNone<U_WALL_CART_t>) {
+      u.y(i, j) = (B * u_old.y(i, j) + C * dvdt) / A;
+    } else {
+      IGOR_ASSERT((std::is_same_v<Metric_, Metric::Cartesian>),
+                  "Only cartesian is supported at the moment.");
+      u.y(i, j) = (B * u_old.y(i, j) + C * (dvdt + nu * ib_corr.y(i, j) * u_wall_cartesian.y)) / A;
+    }
   });
 }
 
@@ -421,29 +440,45 @@ constexpr void update_u_ib_semi_analytical(const Grid<Float, LAYOUT>& grid,
 template <typename Float,
           Layout LAYOUT,
           IsNoneOr<Scalar<Float, LAYOUT>> J_t,
-          IsNoneOr<Scalar<Float, LAYOUT>> FWZ_t>
-constexpr void update_u_ib_semi_analytical(const Grid<Float, LAYOUT>& grid,
-                                           Float dt,
-                                           const J_t J_old,
-                                           const J_t J,
-                                           const Scalar<Float, LAYOUT> FUX,
-                                           const VertexScalar<Float, LAYOUT> FUY,
-                                           const VertexScalar<Float, LAYOUT> FVX,
-                                           const Scalar<Float, LAYOUT> FVY,
-                                           const FWZ_t FWZ,
-                                           Float mu,
-                                           Float rho,
-                                           const FaceVector<Float, LAYOUT> ib_corr,
-                                           const FaceVector<Float, LAYOUT> u_old,
-                                           FaceVector<Float, LAYOUT> u) {
+          IsNoneOr<Scalar<Float, LAYOUT>> FWZ_t,
+          IsNoneOr<Vec2<Float>> U_WALL_CART_t>
+constexpr void update_u_ib_semi_analytical(
+    const Grid<Float, LAYOUT>& grid,
+    Float dt,
+    const J_t J_old,
+    const J_t J,
+    const Scalar<Float, LAYOUT> FUX,
+    const VertexScalar<Float, LAYOUT> FUY,
+    const VertexScalar<Float, LAYOUT> FVX,
+    const Scalar<Float, LAYOUT> FVY,
+    const FWZ_t FWZ,
+    Float mu,
+    Float rho,
+    const FaceVector<Float, LAYOUT> ib_corr,
+    const U_WALL_CART_t& u_wall_cartesian,  // This is **always** in cartesian coordinates
+    const FaceVector<Float, LAYOUT> u_old,
+    FaceVector<Float, LAYOUT> u) {
   PALE_PROFILE_FUNCTION;
   dispatch_metric(
       grid, DISPATCH_FUNC {
         if constexpr (Metric::is_2d != IsNone<FWZ_t>) {
           Igor::Panic("`FWZ` must be given iff coordinates are quasi-3D");
         } else {
-          OrthogonalCoordinates::update_u_ib_semi_analytical<Metric>(
-              grid, dt, J_old, J, FUX, FUY, FVX, FVY, FWZ, mu, rho, ib_corr, u_old, u);
+          OrthogonalCoordinates::update_u_ib_semi_analytical<Metric>(grid,
+                                                                     dt,
+                                                                     J_old,
+                                                                     J,
+                                                                     FUX,
+                                                                     FUY,
+                                                                     FVX,
+                                                                     FVY,
+                                                                     FWZ,
+                                                                     mu,
+                                                                     rho,
+                                                                     ib_corr,
+                                                                     u_wall_cartesian,
+                                                                     u_old,
+                                                                     u);
         }
       });
 }
